@@ -100,6 +100,34 @@ match3_cnn_trainer/
 
 ---
 
+## Git 自动提交
+
+项目已集成 Git + Git LFS，每次保存检查点（每 N epoch / best / final）时会**自动 commit 并后台 push** 到远程仓库。
+
+> 检查点文件 (~2GB) 通过 Git LFS 管理，代码变更随检查点一起提交。
+
+### 使用前准备
+
+1. 在 GitHub 上创建一个空仓库（名称任意，默认假设为 `match3-cnn-trainer`）
+2. 确保本地已配置 Git 凭证（SSH key 或 HTTPS token）
+3. 如需修改远程仓库地址：
+   ```bash
+   git remote set-url origin https://github.com/Jup33Q/YOUR_REPO_NAME.git
+   ```
+
+### 首次 Push
+
+```bash
+cd match3_cnn_trainer
+git branch -M main
+git push -u origin main
+```
+
+> 首次 push 会一次性上传所有历史检查点（可能较大，请耐心等待）。
+> 后续检查点保存时，push 会在**后台异步执行**，不会阻塞训练。
+
+---
+
 ## 快速开始
 
 ### 1. 激活环境
