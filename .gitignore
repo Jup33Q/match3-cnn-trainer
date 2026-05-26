@@ -3,7 +3,17 @@ __pycache__/
 *.pyo
 *.egg-info/
 .ipynb_checkpoints/
-logs/
+
+# Logs: 保留可视化图像，忽略 tensorboard 事件文件等
+logs/*
+!logs/visualizations/
 !logs/.gitkeep
+
+# Checkpoints: 只保留 best/final，忽略中间 epoch（本地仍保存）
+checkpoints/match3_unet_epoch[0-9]*.pt
+!checkpoints/match3_unet_epochbest.pt
+!checkpoints/match3_unet_epochfinal.pt
+
+# Data
 *.npy
 !data/test_board.npy

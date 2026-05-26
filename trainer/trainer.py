@@ -334,7 +334,16 @@ class Match3Trainer:
         self.memory_monitor.print_summary()
 
     def _git_commit_and_push(self, checkpoint_path: str, epoch):
-        """自动 git commit + 异步 push"""
+        """自动 git commit + 异步 push
+
+        策略:
+        - best / final: 提交并 push 到 GitHub
+        - 普通 epoch 检查点: 仅本地保存，不提交（避免每次 push 2GB）
+        """
+        # 只对 best 和 final 做 git 提交
+        if epoch not in ("best", "final"):
+            return
+
         try:
             repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
             # 添加检查点文件和当前代码变更
@@ -347,7 +356,7 @@ class Match3Trainer:
                 cwd=repo_root, check=False, capture_output=True
             )
             # commit
-            commit_msg = f"checkpoint: epoch {epoch} (stage {self.cfg.board_size}x{self.cfg.board_size})"
+            commit_msg = f"checkpoint: {epoch} (stage {self.cfg.board_size}x{self.cfg.board_size})"
             result = subprocess.run(
                 ["git", "commit", "-m", commit_msg],
                 cwd=repo_root, check=False, capture_output=True
