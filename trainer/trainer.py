@@ -1,6 +1,7 @@
-"""trainer.py - BF16混合精度训练引擎 (含课程学习 + 显存监控)"""
+"""trainer.py - BF16混合精度训练引擎 (含课程学习 + 显存监控 + 自动Git提交)"""
 import os
 import random
+import subprocess
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
@@ -332,6 +333,41 @@ class Match3Trainer:
         self.save_checkpoint("final", stage_idx if self.cfg.curriculum_enabled else 0)
         self.memory_monitor.print_summary()
 
+    def _git_commit_and_push(self, checkpoint_path: str, epoch):
+        """自动 git commit + 异步 push"""
+        try:
+            repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            # 添加检查点文件和当前代码变更
+            subprocess.run(
+                ["git", "add", "-f", checkpoint_path],
+                cwd=repo_root, check=False, capture_output=True
+            )
+            subprocess.run(
+                ["git", "add", "-A"],
+                cwd=repo_root, check=False, capture_output=True
+            )
+            # commit
+            commit_msg = f"checkpoint: epoch {epoch} (stage {self.cfg.board_size}x{self.cfg.board_size})"
+            result = subprocess.run(
+                ["git", "commit", "-m", commit_msg],
+                cwd=repo_root, check=False, capture_output=True
+            )
+            if result.returncode == 0:
+                print(f"  [Git] 已提交: {commit_msg}")
+                # 异步 push，避免阻塞训练
+                subprocess.Popen(
+                    ["git", "push", "origin", "HEAD"],
+                    cwd=repo_root,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                print(f"  [Git] push 已触发 (后台上传)")
+            else:
+                # 可能是没有变更，忽略
+                pass
+        except Exception as e:
+            print(f"  [Git] 提交失败 (非致命): {e}")
+
     def save_checkpoint(self, epoch, stage_idx: int = 0):
         path = os.path.join(self.cfg.checkpoint_dir, f"match3_unet_epoch{epoch}.pt")
         torch.save({
@@ -344,6 +380,7 @@ class Match3Trainer:
             "best_iou": self.best_iou,
         }, path)
         print(f"检查点已保存: {path}")
+        self._git_commit_and_push(path, epoch)
 
     def load_checkpoint(self, path: str):
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
