@@ -1,0 +1,30 @@
+# Match-3 CNN U-Net Pattern Recognition Trainer (50x50, BF16, ~8GB)
+# Python >= 3.9
+
+# ================================================================
+# ⚠️ 重要：PyTorch + torchvision 必须按 CUDA 版本单独安装
+#    不要直接 pip install -r requirements.txt 来装 PyTorch！
+#    详见 README.md -> "依赖安装"
+#
+# 例如 (CUDA 13.2):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu132
+# ================================================================
+
+# --- 核心依赖 (已由上述命令安装，此处仅作声明) ---
+# torch>=2.0.0
+# torchvision>=0.15.0
+
+# --- 数值计算 ---
+numpy>=1.24.0
+
+# --- 训练 & 日志 ---
+tensorboard>=2.13.0
+tqdm>=4.65.0
+
+# --- 系统监控 ---
+psutil>=5.9.0
+
+# --- 可选: Mamba 状态空间模型层 (如需启用 mamba 分支) ---
+# mamba-ssm>=1.2.0
+# causal-conv1d>=1.2.0
+#   安装前提: pip install torch 之后，再按 https://github.com/state-spaces/mamba 指引安装
