@@ -379,21 +379,36 @@ class Match3Trainer:
 
     def save_checkpoint(self, epoch, stage_idx: int = 0):
         path = os.path.join(self.cfg.checkpoint_dir, f"match3_unet_epoch{epoch}.pt")
+
+        # 将 FP32 权重转换为 BF16，减少检查点体积 (~50%)
+        bf16_state = {
+            k: v.to(torch.bfloat16) if v.dtype == torch.float32 else v
+            for k, v in self.model.state_dict().items()
+        }
+
         torch.save({
             "epoch": epoch,
             "stage_idx": stage_idx,
-            "model_state_dict": self.model.state_dict(),
+            "model_state_dict": bf16_state,
             "optimizer_state_dict": self.optimizer.state_dict(),
             "scheduler_state_dict": self.scheduler.state_dict(),
             "config": self.cfg,
             "best_iou": self.best_iou,
         }, path)
-        print(f"检查点已保存: {path}")
+        print(f"检查点已保存 (BF16): {path}")
         self._git_commit_and_push(path, epoch)
 
     def load_checkpoint(self, path: str):
         checkpoint = torch.load(path, map_location=self.device, weights_only=False)
-        self.model.load_state_dict(checkpoint["model_state_dict"])
+        state_dict = checkpoint["model_state_dict"]
+
+        # 兼容 BF16 检查点：自动转回 FP32 加载到模型
+        fp32_state = {
+            k: v.to(torch.float32) if v.dtype == torch.bfloat16 else v
+            for k, v in state_dict.items()
+        }
+
+        self.model.load_state_dict(fp32_state)
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         if "scheduler_state_dict" in checkpoint and self.scheduler is not None:
             self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
