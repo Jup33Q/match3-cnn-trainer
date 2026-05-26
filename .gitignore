@@ -9,10 +9,8 @@ logs/*
 !logs/visualizations/
 !logs/.gitkeep
 
-# Checkpoints: 只保留 best/final，忽略中间 epoch（本地仍保存）
-checkpoints/match3_unet_epoch[0-9]*.pt
-!checkpoints/match3_unet_epochbest.pt
-!checkpoints/match3_unet_epochfinal.pt
+# Checkpoints: 完全忽略（GitHub 不传模型）
+checkpoints/
 
 # Data
 *.npy
