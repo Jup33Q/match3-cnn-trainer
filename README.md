@@ -102,25 +102,33 @@ match3_cnn_trainer/
 
 ## Git 自动提交
 
-项目已集成 Git + Git LFS，每次保存检查点（每 N epoch / best / final）时会**自动 commit 并后台 push** 到远程仓库。
+项目已集成 Git + Git LFS，每次保存检查点（best / final）时会**自动 commit 并后台 push** 到远程仓库。
 
-> 检查点文件 (~2GB) 通过 Git LFS 管理，代码变更随检查点一起提交。
+> 检查点文件 (~1.7GB) 通过 Git LFS 管理，代码变更随检查点一起提交。
 
-### 使用前准备
+### 双平台推送
 
-1. 在 GitHub 上创建一个空仓库（名称任意，默认假设为 `match3-cnn-trainer`）
-2. 确保本地已配置 Git 凭证（SSH key 或 HTTPS token）
-3. 如需修改远程仓库地址：
-   ```bash
-   git remote set-url origin https://github.com/Jup33Q/YOUR_REPO_NAME.git
-   ```
+项目同时配置了 **GitHub** 和 **ModelScope（魔搭）** 两个 remote，国内用户推 ModelScope 更快。
 
-### 首次 Push
+| 平台 | Remote 名 | 适用场景 |
+|------|-----------|----------|
+| **GitHub** | `origin` | 国际通用 |
+| **ModelScope** | `modelscope` | 国内速度快 |
+
+### 推送到 GitHub
+
+如果你本地开了代理（如 Clash/V2Ray），git-lfs 可能报 `HTTP response to HTTPS client`，需要临时取消代理：
 
 ```bash
 cd match3_cnn_trainer
-git branch -M main
-git push -u origin main
+env -u https_proxy -u HTTPS_PROXY -u http_proxy -u HTTP_PROXY git push -u origin main
+```
+
+### 推送到 ModelScope
+
+```bash
+cd match3_cnn_trainer
+git push -u modelscope main
 ```
 
 > 首次 push 会一次性上传所有历史检查点（可能较大，请耐心等待）。
