@@ -82,6 +82,7 @@ class Match3Config:
     seed: int = 42
     checkpoint_dir: str = "./checkpoints"
     log_dir: str = "./logs"
+    auto_git_commit: bool = False   # 保存 best/final checkpoint 时是否自动 git commit
     pin_memory: bool = True
     prefetch_factor: int = 4
 

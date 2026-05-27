@@ -357,12 +357,14 @@ class Match3Trainer:
         self.memory_monitor.print_summary()
 
     def _git_commit_and_push(self, checkpoint_path: str, epoch):
-        """自动 git commit + 异步 push
+        """自动 git commit (可选)
 
         策略:
-        - best / final: 提交并 push 到 GitHub
+        - best / final: 可选提交
         - 普通 epoch 检查点: 仅本地保存，不提交（避免每次 push 2GB）
         """
+        if not getattr(self.cfg, 'auto_git_commit', False):
+            return
         # 只对 best 和 final 做 git 提交
         if epoch not in ("best", "final"):
             return
