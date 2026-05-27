@@ -15,3 +15,8 @@ checkpoints/
 # Data
 *.npy
 !data/test_board.npy
+
+# ModelScope upload script (contains token)
+scripts/upload_to_modelscope.py
+scripts/upload_to_modelscope.sh
+

@@ -22,20 +22,20 @@ class Match3Config:
     initial_kernel_size: int = 7               # 首层大卷积核 (捕获局部连续性)
     base_channels: int = 32                    # 基础通道数
     num_encoder_blocks: int = 5                # Encoder 块数量 (5层深度)
-    blocks_per_stage: int = 3                  # 每个Encoder/Decoder stage的ResBlock数
-    bottleneck_blocks: int = 4                 # Bottleneck中的ResBlock数
+    blocks_per_stage: int = 2                  # 每个Encoder/Decoder stage的ResBlock数
+    bottleneck_blocks: int = 2                 # Bottleneck中的ResBlock数
     use_dilation: bool = True                  # 是否使用膨胀卷积
     dilation_rates: List[int] = field(default_factory=lambda: [1, 2, 4, 8])  # 膨胀率序列
     dropout: float = 0.0                       # Dropout率
 
     # --- Mamba 层参数 ---
-    use_mamba: bool = False                    # 是否在Bottleneck中启用Mamba层
+    use_mamba: bool = True                     # 是否在Bottleneck中启用Mamba层 (默认启用)
     mamba_d_state: int = 16                    # Mamba状态空间维度
     mamba_d_conv: int = 4                      # Mamba因果卷积核大小
     mamba_expand: int = 2                      # Mamba内部扩展因子
 
     # --- 训练参数 ---
-    batch_size: int = 200                      # 每batch样本数
+    batch_size: int = 40                       # 每batch样本数
     num_epochs: int = 100
     learning_rate: float = 1e-3
     weight_decay: float = 1e-4
@@ -55,7 +55,7 @@ class Match3Config:
 
     # --- 课程学习 ---
     curriculum_enabled: bool = True
-    curriculum_stages: List[int] = field(default_factory=lambda: [10, 25, 50])  # 棋盘递进
+    curriculum_stages: List[int] = field(default_factory=lambda: [10, 25, 50, -1, -2])  # 棋盘递进 (-1=随机10~50, -2=stage5随机+RoPE)
     curriculum_epochs_per_stage: int = 20
 
     # --- 后处理 ---
@@ -81,6 +81,12 @@ class Match3Config:
     # --- 显存限制 ---
     max_memory_gb: float = 8.0                 # 最大允许显存 (GB)
     memory_warning_threshold: float = 0.85     # 显存告警阈值 (比例)
+
+    # --- Fruit RoPE 编码 (stage5) ---
+    fruit_embed_dim: int = 32                  # RoPE 编码维度
+    max_fruit_types: int = 16                  # 最大支持的fruit种类数
+    stage5_match_length_range: Tuple[int, int] = (5, 8)   # stage5 match长度范围
+    stage5_fruit_range: Tuple[int, int] = (5, 12)         # stage5 fruit种类范围
 
     def get(self, key, default=None):
         """支持类似dict的get方法"""

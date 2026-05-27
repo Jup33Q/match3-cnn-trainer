@@ -9,9 +9,14 @@
 | 架构 | ResNet-U-Net (5层 Encoder + 4层 Bottleneck + 5层 Decoder) |
 | 输入尺寸 | 50×50 棋盘 |
 | 水果种类 | 6 种 |
-| 参数量 | ~174M |
+| 参数量 | ~204M (启用 Mamba) |
 | 精度 | BF16 混合精度训练 |
 | 输出 | 消除位置 Mask (logits) |
+| Mamba | 默认启用 (Bottleneck 中 2×Mamba2DLayer) |
+
+## 模型架构
+
+![Architecture Diagram](./architecture_diagram.png)
 
 ## 支持的 Pattern
 
@@ -37,8 +42,8 @@ model.eval()
 
 ## 训练配置
 
-- Batch size: 80
-- Dropout: 0.1
+- Batch size: 40
+- Dropout: 0.0
 - 课程学习: 10×10 → 25×25 → 50×50
 - 损失函数: Dice + Focal + Boundary
 

@@ -121,9 +121,9 @@ class Match3Trainer:
         total_loss = {k: 0.0 for k in ["total", "dice", "focal", "boundary"]}
 
         pbar = tqdm(dataloader, desc=f"Epoch {epoch}")
-        for batch_idx, (boards, masks) in enumerate(pbar):
-            boards = boards.to(self.device)
-            masks = masks.to(self.device).unsqueeze(1)  # (B, 1, H, W)
+        for batch_idx, batch in enumerate(pbar):
+            boards = batch[0].to(self.device)
+            masks = batch[1].to(self.device).unsqueeze(1)  # (B, 1, H, W)
 
             self.optimizer.zero_grad()
 
@@ -172,14 +172,15 @@ class Match3Trainer:
         total_recall = 0.0
 
         with torch.no_grad():
-            for boards, masks in tqdm(dataloader, desc="Validating"):
-                boards = boards.to(self.device)
-                masks = masks.to(self.device).unsqueeze(1)
+            for batch in tqdm(dataloader, desc="Validating"):
+                boards = batch[0].to(self.device)
+                masks = batch[1].to(self.device).unsqueeze(1)
+                fruit_ids = batch[2].to(self.device) if len(batch) > 2 else None
 
                 with self._autocast_context():
                     preds = self.model(boards)
                     if self.cfg.enforce_connectivity:
-                        preds = enforce_match3_rules(preds, boards)
+                        preds = enforce_match3_rules(preds, boards, fruit_ids=fruit_ids)
 
                 binary_preds = (torch.sigmoid(preds) > self.cfg.mask_threshold).float()
 
@@ -232,8 +233,14 @@ class Match3Trainer:
             if stage_idx < start_stage:
                 print(f"\n跳过阶段 {stage_idx} (尺寸 {stage_size}x{stage_size})")
                 continue
+            if stage_size == -2:
+                stage_label = "Stage5: 随机10~50 + RoPE + 5~12种fruit + match>=5"
+            elif stage_size == -1:
+                stage_label = "随机尺寸 10~50"
+            else:
+                stage_label = f"{stage_size}x{stage_size}"
             print(f"\n{':'*50}")
-            print(f"课程学习阶段 {stage_idx + 1}/{len(stages)}: 棋盘尺寸 {stage_size}x{stage_size}")
+            print(f"课程学习阶段 {stage_idx + 1}/{len(stages)}: 棋盘尺寸 {stage_label}")
             print(f"{':'*50}")
 
             # 创建该阶段数据集
@@ -244,18 +251,17 @@ class Match3Trainer:
             prefetch_factor = getattr(self.cfg, 'prefetch_factor', 2)
             persistent = self.cfg.num_workers > 0
 
-            train_loader = DataLoader(
-                train_ds, batch_size=self.cfg.batch_size,
-                shuffle=True, num_workers=self.cfg.num_workers,
-                pin_memory=pin_memory, prefetch_factor=prefetch_factor,
-                persistent_workers=persistent
+            loader_kwargs = dict(
+                batch_size=self.cfg.batch_size,
+                num_workers=self.cfg.num_workers,
+                pin_memory=pin_memory,
             )
-            val_loader = DataLoader(
-                val_ds, batch_size=self.cfg.batch_size,
-                shuffle=False, num_workers=self.cfg.num_workers,
-                pin_memory=pin_memory, prefetch_factor=prefetch_factor,
-                persistent_workers=persistent
-            )
+            if self.cfg.num_workers > 0:
+                loader_kwargs['prefetch_factor'] = prefetch_factor
+                loader_kwargs['persistent_workers'] = persistent
+
+            train_loader = DataLoader(train_ds, shuffle=True, **loader_kwargs)
+            val_loader = DataLoader(val_ds, shuffle=False, **loader_kwargs)
 
             epochs_this_stage = self.cfg.curriculum_epochs_per_stage if self.cfg.curriculum_enabled else self.cfg.num_epochs
 
@@ -273,32 +279,31 @@ class Match3Trainer:
                 train_loss = self.train_epoch(train_loader, global_epoch, stage_idx)
                 val_metrics = self.validate(val_loader)
 
-                # 每N个epoch生成可视化样例，减少CPU阻塞导致的GPU空闲
-                vis_every = getattr(self.cfg, 'visualize_every_epochs', 1)
-                if vis_every > 0 and global_epoch % vis_every == 0:
-                    self.model.eval()
-                    vis_samples = []
-                    with torch.no_grad():
-                        for vis_idx in range(10):
-                            vis_board, vis_mask = None, None
-                            for _ in range(50):  # 最多尝试50次生成正例 (减少CPU阻塞)
-                                vb, vm = val_ds._generate_one()
-                                if vm.sum() > 0:
-                                    vis_board, vis_mask = vb, vm
-                                    break
-                            if vis_board is None:
-                                vis_board, vis_mask = val_ds._generate_one()
+                # 每个epoch都生成可视化样例(测试输出+图像合并)
+                self.model.eval()
+                vis_samples = []
+                with torch.no_grad():
+                    for vis_idx in range(10):
+                        vis_board, vis_mask, vis_fids = None, None, None
+                        for _ in range(50):  # 最多尝试50次生成正例 (减少CPU阻塞)
+                            vb, vm, vf = val_ds._generate_one()
+                            if vm.sum() > 0:
+                                vis_board, vis_mask, vis_fids = vb, vm, vf
+                                break
+                        if vis_board is None:
+                            vis_board, vis_mask, vis_fids = val_ds._generate_one()
 
-                            vis_board = vis_board.unsqueeze(0).to(self.device)
-                            vis_mask = vis_mask.unsqueeze(0).to(self.device)
-                            with self._autocast_context():
-                                vis_pred = self.model(vis_board)
+                        vis_board = vis_board.unsqueeze(0).to(self.device)
+                        vis_mask = vis_mask.unsqueeze(0).to(self.device)
+                        vis_fids = vis_fids.unsqueeze(0).to(self.device)
+                        with self._autocast_context():
+                            vis_pred = self.model(vis_board)
 
-                            sample_type = "positive" if vis_mask[0].sum() > 0 else "negative"
-                            vis_samples.append((
-                                vis_board[0], vis_mask[0], vis_pred[0], sample_type
-                            ))
-                        self._visualize_samples(vis_samples, global_epoch, stage_size)
+                        sample_type = "positive" if vis_mask[0].sum() > 0 else "negative"
+                        vis_samples.append((
+                            vis_board[0], vis_mask[0], vis_pred[0], sample_type, vis_fids[0]
+                        ))
+                    self._visualize_samples(vis_samples, global_epoch, stage_size)
 
                 # 日志
                 for k, v in train_loss.items():
@@ -363,14 +368,14 @@ class Match3Trainer:
             )
             if result.returncode == 0:
                 print(f"  [Git] 已提交: {commit_msg}")
-                # 异步 push，避免阻塞训练
-                subprocess.Popen(
-                    ["git", "push", "origin", "HEAD"],
-                    cwd=repo_root,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
-                print(f"  [Git] push 已触发 (后台上传)")
+                # 禁用自动 push
+                # subprocess.Popen(
+                #     ["git", "push", "origin", "HEAD"],
+                #     cwd=repo_root,
+                #     stdout=subprocess.DEVNULL,
+                #     stderr=subprocess.DEVNULL
+                # )
+                # print(f"  [Git] push 已触发 (后台上传)")
             else:
                 # 可能是没有变更，忽略
                 pass
@@ -408,7 +413,20 @@ class Match3Trainer:
             for k, v in state_dict.items()
         }
 
-        self.model.load_state_dict(fp32_state)
+        # 兼容输入通道变化 (stem.conv1.weight)
+        expected_in_ch = getattr(self.cfg, 'fruit_embed_dim', self.cfg.num_fruit_types)
+        if 'stem.0.weight' in fp32_state:
+            actual_in_ch = fp32_state['stem.0.weight'].shape[1]
+            if actual_in_ch != expected_in_ch:
+                print(f"[WARN] 检查点输入通道 {actual_in_ch} 与当前模型 {expected_in_ch} 不匹配，进行零填充适配")
+                old_w = fp32_state['stem.0.weight']  # (out_ch, actual_in_ch, k, k)
+                out_ch, _, kH, kW = old_w.shape
+                new_w = torch.zeros(out_ch, expected_in_ch, kH, kW, device=old_w.device, dtype=old_w.dtype)
+                copy_ch = min(actual_in_ch, expected_in_ch)
+                new_w[:, :copy_ch] = old_w[:, :copy_ch]
+                fp32_state['stem.0.weight'] = new_w
+
+        self.model.load_state_dict(fp32_state, strict=False)
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         if "scheduler_state_dict" in checkpoint and self.scheduler is not None:
             self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
@@ -429,8 +447,8 @@ class Match3Trainer:
             font = ImageFont.load_default()
             font_small = font
 
-        for sample_idx, (board, gt_mask, pred_mask, sample_type) in enumerate(samples):
-            board_np = board.argmax(dim=0).cpu().numpy()
+        for sample_idx, (board, gt_mask, pred_mask, sample_type, fruit_ids) in enumerate(samples):
+            board_np = fruit_ids.cpu().numpy()
             gt_np = gt_mask.squeeze().cpu().numpy()
             pred_prob = torch.sigmoid(pred_mask).squeeze().float().cpu().numpy()
             pred_bin = (pred_prob > self.cfg.mask_threshold).astype(np.int32)

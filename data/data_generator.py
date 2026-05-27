@@ -1,10 +1,37 @@
 """data_generator.py - 程序化生成三消棋盘与消除Mask"""
+import random
 import torch
 import numpy as np
 from typing import Tuple
 
 from config import Match3Config
 from .pattern_types import PatternDetector, PatternType
+
+
+class FruitRoPE:
+    """使用1D RoPE (Rotary Position Embedding) 编码fruit类型"""
+
+    def __init__(self, dim: int = 32, max_types: int = 16, base: float = 10000.0):
+        self.dim = dim
+        self.max_types = max_types
+        positions = torch.arange(max_types).float()          # (max_types,)
+        i = torch.arange(0, dim, 2).float()                  # (dim // 2,)
+        theta = base ** (-2 * i / dim)                       # (dim // 2,)
+        angles = positions.unsqueeze(1) * theta.unsqueeze(0)  # (max_types, dim // 2)
+        emb = torch.zeros(max_types, dim)
+        emb[:, 0::2] = torch.sin(angles)
+        emb[:, 1::2] = torch.cos(angles)
+        self.emb = emb  # (max_types, dim)
+
+    def encode(self, board: np.ndarray) -> torch.Tensor:
+        """将fruit ID board编码为RoPE embedding
+        Args:
+            board: (H, W) int array, fruit type IDs
+        Returns:
+            (dim, H, W) float tensor
+        """
+        t = torch.from_numpy(board).long().clamp(0, self.max_types - 1)
+        return self.emb[t].permute(2, 0, 1)  # (dim, H, W)
 
 
 class Match3BoardGenerator:
@@ -15,34 +42,57 @@ class Match3BoardGenerator:
         self.rng = np.random.RandomState(config.seed)
         self.detector = PatternDetector()
 
-    def generate_board(self, size: int, difficulty: str = "mixed") -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def generate_board(self, size: int, difficulty: str = "mixed",
+                       num_fruit_types: int = None,
+                       min_match_length: int = None,
+                       max_match_length: int = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         生成棋盘和对应的三消 Mask
 
         Args:
             size: 棋盘尺寸 (size x size)
             difficulty: "easy" | "hard" | "positive"
+            num_fruit_types: 临时覆盖的fruit种类数 (None=使用config)
+            min_match_length: 临时覆盖的最小消除长度 (None=使用config)
+            max_match_length: 临时覆盖的最大注入长度 (None=使用config)
 
         Returns:
             board: (size, size) int array, 每个格子的水果类型 [0, num_fruit_types)
             mask: (size, size) bool array, 1表示该格点参与三消
             pattern_types: (size, size) int array, Pattern类型ID
         """
-        if difficulty == "easy":
-            board = self.rng.randint(0, self.cfg.num_fruit_types, (size, size))
-            pattern_map, patterns = self.detector.detect_all_patterns(board, self.cfg.min_match_length)
-            mask = (pattern_map != PatternType.NONE.value)
+        # 保存旧值以便恢复
+        old_num = self.cfg.num_fruit_types
+        old_min = self.cfg.min_match_length
+        old_max = self.cfg.max_match_length
 
-        elif difficulty == "hard":
-            board = self._generate_near_miss_board(size)
-            mask = np.zeros((size, size), dtype=np.bool_)
-            pattern_map = np.full((size, size), PatternType.NONE.value, dtype=np.int32)
+        try:
+            if num_fruit_types is not None:
+                self.cfg.num_fruit_types = num_fruit_types
+            if min_match_length is not None:
+                self.cfg.min_match_length = min_match_length
+            if max_match_length is not None:
+                self.cfg.max_match_length = max_match_length
 
-        else:  # "positive"
-            board = self.rng.randint(0, self.cfg.num_fruit_types, (size, size))
-            board, mask, pattern_map = self._inject_match_patterns(board)
+            if difficulty == "easy":
+                board = self.rng.randint(0, self.cfg.num_fruit_types, (size, size))
+                pattern_map, patterns = self.detector.detect_all_patterns(board, self.cfg.min_match_length)
+                mask = (pattern_map != PatternType.NONE.value)
 
-        return board, mask, pattern_map
+            elif difficulty == "hard":
+                board = self._generate_near_miss_board(size)
+                mask = np.zeros((size, size), dtype=np.bool_)
+                pattern_map = np.full((size, size), PatternType.NONE.value, dtype=np.int32)
+
+            else:  # "positive"
+                board = self.rng.randint(0, self.cfg.num_fruit_types, (size, size))
+                board, mask, pattern_map = self._inject_match_patterns(board)
+
+            return board, mask, pattern_map
+        finally:
+            self.cfg.num_fruit_types = old_num
+            self.cfg.min_match_length = old_min
+            self.cfg.max_match_length = old_max
 
     def _generate_near_miss_board(self, size: int) -> np.ndarray:
         """生成含大量接近三消但无实际消除的棋盘"""
@@ -178,30 +228,69 @@ class Match3Dataset(torch.utils.data.Dataset):
     def __init__(self, config: Match3Config, num_samples: int, stage_size: int = None):
         self.cfg = config
         self.num_samples = num_samples
-        self.size = stage_size or config.board_size
+        self.size = stage_size if stage_size is not None else config.board_size
+        self.random_size = (stage_size == -1 or stage_size == -2)
+        self.stage5_mode = (stage_size == -2)
+        self.max_size = config.board_size
         self.generator = Match3BoardGenerator(config)
+        self.fruit_rope = FruitRoPE(config.fruit_embed_dim, config.max_fruit_types)
 
         # 预生成所有数据 (内存允许时) 或 动态生成
-        self.preload = num_samples <= 10000
+        self.preload = num_samples <= 10000 and not self.random_size and not self.stage5_mode
         if self.preload:
             self.data = [self._generate_one() for _ in range(num_samples)]
 
-    def _generate_one(self) -> Tuple[torch.Tensor, torch.Tensor]:
-        """生成单个样本"""
+    def _generate_one(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """生成单个样本，返回 (board_rope, mask, fruit_ids)"""
         # 按难度比例采样
         difficulties = ["easy", "hard", "positive"]
         weights = self.cfg.difficulty_ratio
         difficulty = np.random.choice(difficulties, p=weights)
 
-        board, mask, _ = self.generator.generate_board(self.size, difficulty)
+        # 确定动态参数
+        if self.stage5_mode:
+            actual_size = random.randint(10, self.max_size)
+            num_fruit_types = random.randint(*self.cfg.stage5_fruit_range)
+            min_match_length = self.cfg.stage5_match_length_range[0]
+            max_match_length = random.randint(*self.cfg.stage5_match_length_range)
+        elif self.random_size:
+            actual_size = random.randint(10, self.max_size)
+            num_fruit_types = None
+            min_match_length = None
+            max_match_length = None
+        else:
+            actual_size = self.size
+            num_fruit_types = None
+            min_match_length = None
+            max_match_length = None
 
-        # 转换为 one-hot 张量: (C, H, W)
-        board_tensor = torch.zeros(self.cfg.num_fruit_types, self.size, self.size, dtype=torch.float32)
-        for c in range(self.cfg.num_fruit_types):
-            board_tensor[c] = torch.from_numpy((board == c).astype(np.float32))
+        board, mask, _ = self.generator.generate_board(
+            actual_size, difficulty,
+            num_fruit_types=num_fruit_types,
+            min_match_length=min_match_length,
+            max_match_length=max_match_length
+        )
+
+        # 若启用随机尺寸，将实际棋盘嵌入到 max_size x max_size 中随机位置
+        if (self.random_size or self.stage5_mode) and actual_size < self.max_size:
+            num_ft = num_fruit_types if num_fruit_types is not None else self.cfg.num_fruit_types
+            full_board = self.generator.rng.randint(0, num_ft, (self.max_size, self.max_size))
+            full_mask = np.zeros((self.max_size, self.max_size), dtype=np.bool_)
+            sy = random.randint(0, self.max_size - actual_size)
+            sx = random.randint(0, self.max_size - actual_size)
+            full_board[sy:sy+actual_size, sx:sx+actual_size] = board
+            full_mask[sy:sy+actual_size, sx:sx+actual_size] = mask
+            board = full_board
+            mask = full_mask
+            actual_size = self.max_size
+
+        fruit_ids = torch.from_numpy(board).long()
+
+        # 统一使用 RoPE 编码替代 one-hot: (fruit_embed_dim, H, W)
+        board_tensor = self.fruit_rope.encode(board)
 
         mask_tensor = torch.from_numpy(mask.astype(np.float32))
-        return board_tensor, mask_tensor
+        return board_tensor, mask_tensor, fruit_ids
 
     def __len__(self):
         return self.num_samples

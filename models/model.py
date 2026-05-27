@@ -104,12 +104,13 @@ class Match3UNet(nn.Module):
     def __init__(self, config: Match3Config):
         super().__init__()
         self.cfg = config
-        n_stage = config.get("blocks_per_stage", 3)
-        n_bot = config.get("bottleneck_blocks", 4)
+        n_stage = config.get("blocks_per_stage", 2)
+        n_bot = config.get("bottleneck_blocks", 2)
 
-        # Stem
+        # Stem (支持 RoPE 编码输入)
+        input_ch = getattr(config, 'fruit_embed_dim', config.num_fruit_types)
         self.stem = nn.Sequential(
-            nn.Conv2d(config.num_fruit_types, config.base_channels,
+            nn.Conv2d(input_ch, config.base_channels,
                       config.initial_kernel_size,
                       padding=config.initial_kernel_size // 2, bias=False),
             nn.BatchNorm2d(config.base_channels),

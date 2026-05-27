@@ -1,12 +1,12 @@
-"""生成 Match3UNet 默认架构结构图"""
+"""生成 Match3UNet 架构结构图 (RoPE 输入版, 5阶段课程学习)"""
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 import numpy as np
 
-fig, ax = plt.subplots(1, 1, figsize=(20, 26))
+fig, ax = plt.subplots(1, 1, figsize=(20, 28))
 ax.set_xlim(0, 20)
-ax.set_ylim(0, 26)
+ax.set_ylim(0, 28)
 ax.axis('off')
 
 # 颜色定义
@@ -19,24 +19,34 @@ colors = {
     'skip': '#F7FFF7',
     'text': '#2D3436',
     'arrow': '#636e72',
-    'bg': '#f8f9fa'
+    'bg': '#f8f9fa',
+    'rope': '#9b59b6',
+    'stage': '#3498db',
+    'mamba': '#e17055'
 }
 
 fig.patch.set_facecolor(colors['bg'])
 ax.set_facecolor(colors['bg'])
 
 # 标题
-ax.text(10, 25.5, 'Match3UNet Architecture', fontsize=28, fontweight='bold',
+ax.text(10, 27.5, 'Match3UNet Architecture', fontsize=28, fontweight='bold',
         ha='center', va='center', color=colors['text'])
-ax.text(10, 24.8, 'Deep ResNet-U-Net for Match-3 Pattern Recognition (50×50 Input)',
+ax.text(10, 26.8, 'Deep ResNet-U-Net for Match-3 Pattern Recognition (RoPE Input, 5-Stage Curriculum)',
         fontsize=14, ha='center', va='center', color='#636e72')
 
 # 统计信息框
-stats_box = FancyBboxPatch((0.5, 23.2), 19, 1.2, boxstyle="round,pad=0.05,rounding_size=0.2",
+stats_box = FancyBboxPatch((0.5, 25.5), 19, 1.0, boxstyle="round,pad=0.05,rounding_size=0.2",
                             facecolor='white', edgecolor='#dfe6e9', linewidth=1.5)
 ax.add_patch(stats_box)
-ax.text(10, 23.8, 'Total Params: 174.4M  |  Model Size (FP32): 697.5 MB  |  Input: [B, 6, 50, 50]  |  Output: [B, 1, 50, 50]',
+ax.text(10, 26.0, 'Total Params: ~120M (with Mamba) / ~90M (w/o Mamba)  |  Input: [B, 32, H, W] (Fruit RoPE)  |  Output: [B, 1, H, W]',
         fontsize=12, ha='center', va='center', color=colors['text'], fontweight='bold')
+
+# ============ Fruit RoPE 编码框 ============
+rope_box = FancyBboxPatch((0.5, 24.0), 19, 0.9, boxstyle="round,pad=0.05,rounding_size=0.15",
+                           facecolor=colors['rope'], edgecolor='white', linewidth=2, alpha=0.15)
+ax.add_patch(rope_box)
+ax.text(10, 24.45, 'Fruit RoPE Encoding: fruit_type_id → 32-dim vector  (supports 5~12 dynamic fruit types)',
+        fontsize=11, ha='center', va='center', color=colors['rope'], fontweight='bold')
 
 def draw_block(ax, x, y, w, h, color, label, sublabel='', alpha=1.0):
     box = FancyBboxPatch((x - w/2, y - h/2), w, h,
@@ -63,15 +73,15 @@ def draw_skip(ax, x1, y1, x2, y2, color='#fdcb6e'):
 
 # ============ STEM ============
 draw_block(ax, 10, 22.5, 3.5, 0.9, colors['stem'], 'Stem',
-           'Conv7×7 → BN → ReLU\n[6, 50, 50] → [32, 50, 50]')
+           'Conv7×7 → BN → ReLU\n[32, H, W] → [32, H, W]')
 
 # ============ ENCODER ============
 enc_stages = [
-    ('Encoder 1', '[32,50,50]→[64,25,25]', '3×ResBlock + MaxPool', 21.0),
-    ('Encoder 2', '[64,25,25]→[128,12,12]', '3×ResBlock + MaxPool', 19.5),
-    ('Encoder 3', '[128,12,12]→[256,6,6]', '3×ResBlock + MaxPool', 18.0),
-    ('Encoder 4', '[256,6,6]→[512,3,3]', '3×ResBlock + MaxPool', 16.5),
-    ('Encoder 5', '[512,3,3]→[1024,1,1]', '3×ResBlock + MaxPool', 15.0),
+    ('Encoder 1', '[32,50,50]→[64,25,25]', '2×ResBlock + MaxPool', 21.0),
+    ('Encoder 2', '[64,25,25]→[128,12,12]', '2×ResBlock + MaxPool', 19.5),
+    ('Encoder 3', '[128,12,12]→[256,6,6]', '2×ResBlock + MaxPool', 18.0),
+    ('Encoder 4', '[256,6,6]→[512,3,3]', '2×ResBlock + MaxPool', 16.5),
+    ('Encoder 5', '[512,3,3]→[1024,1,1]', '2×ResBlock + MaxPool', 15.0),
 ]
 
 for i, (name, dims, desc, y) in enumerate(enc_stages):
@@ -79,17 +89,25 @@ for i, (name, dims, desc, y) in enumerate(enc_stages):
     draw_arrow(ax, 10, y + 0.9 + 0.15, 10, y + 0.45)
 
 # ============ BOTTLENECK ============
+# With use_mamba=true, bottleneck_blocks=2: BasicBlock + Mamba2DLayer
 draw_block(ax, 10, 13.2, 4.0, 1.0, colors['bottleneck'], 'Bottleneck',
-           '4× BasicBlock (ResNet)\n[1024, 1, 1] → [1024, 1, 1]')
+           'BasicBlock + Mamba2DLayer\n[1024, 1, 1] → [1024, 1, 1]')
+# Mamba indicator
+mamba_box = FancyBboxPatch((10 + 1.2, 13.2 - 0.25), 1.6, 0.5,
+                            boxstyle="round,pad=0.02", facecolor=colors['mamba'],
+                            edgecolor='white', linewidth=1.5, alpha=0.9)
+ax.add_patch(mamba_box)
+ax.text(10 + 2.0, 13.2, 'Mamba', fontsize=7, ha='center', va='center',
+        color='white', fontweight='bold')
 draw_arrow(ax, 10, 14.55, 10, 13.7)
 
 # ============ DECODER ============
 dec_stages = [
-    ('Decoder 5', '[1024,1,1]→[512,3,3]', 'UpConv + Concat + 3×ResBlock', 11.7),
-    ('Decoder 4', '[512,3,3]→[256,6,6]', 'UpConv + Concat + 3×ResBlock', 10.2),
-    ('Decoder 3', '[256,6,6]→[128,12,12]', 'UpConv + Concat + 3×ResBlock', 8.7),
-    ('Decoder 2', '[128,12,12]→[64,25,25]', 'UpConv + Concat + 3×ResBlock', 7.2),
-    ('Decoder 1', '[64,25,25]→[32,50,50]', 'UpConv + Concat + 3×ResBlock', 5.7),
+    ('Decoder 5', '[1024,1,1]→[512,3,3]', 'UpConv + Concat + 2×ResBlock', 11.7),
+    ('Decoder 4', '[512,3,3]→[256,6,6]', 'UpConv + Concat + 2×ResBlock', 10.2),
+    ('Decoder 3', '[256,6,6]→[128,12,12]', 'UpConv + Concat + 2×ResBlock', 8.7),
+    ('Decoder 2', '[128,12,12]→[64,25,25]', 'UpConv + Concat + 2×ResBlock', 7.2),
+    ('Decoder 1', '[64,25,25]→[32,50,50]', 'UpConv + Concat + 2×ResBlock', 5.7),
 ]
 
 for i, (name, dims, desc, y) in enumerate(dec_stages):
@@ -101,11 +119,10 @@ for i, (name, dims, desc, y) in enumerate(dec_stages):
 
 # ============ OUTPUT HEAD ============
 draw_block(ax, 10, 4.2, 3.5, 0.9, colors['output'], 'Output Head',
-           'Conv 1×1 (no sigmoid)\n[32, 50, 50] → [1, 50, 50]')
+           'Conv 1×1 (logits)\n[32, 50, 50] → [1, 50, 50]')
 draw_arrow(ax, 10, 5.25, 10, 4.65)
 
 # ============ SKIP CONNECTIONS ============
-# 从每个 Encoder 到对应的 Decoder
 skip_pairs = [
     (21.0, 5.7),   # Enc1 -> Dec1
     (19.5, 7.2),   # Enc2 -> Dec2
@@ -124,9 +141,9 @@ ax.text(15.5, 13.35, 'Skip Connections\n(Concatenation)', fontsize=10, ha='cente
 # ============ LEGEND ============
 legend_items = [
     (colors['stem'], 'Stem: 7×7 Conv + BN + ReLU'),
-    (colors['encoder'], 'Encoder: 3×ResBlock + MaxPool2d'),
-    (colors['bottleneck'], 'Bottleneck: 4×ResBlock'),
-    (colors['decoder'], 'Decoder: UpConv + Concat + 3×ResBlock'),
+    (colors['encoder'], 'Encoder: 2×ResBlock + MaxPool2d'),
+    (colors['bottleneck'], 'Bottleneck: ResBlock + Mamba2D'),
+    (colors['decoder'], 'Decoder: UpConv + Concat + 2×ResBlock'),
     (colors['output'], 'Output: 1×1 Conv (logits)'),
 ]
 
@@ -156,12 +173,26 @@ ax.text(rb_x, rb_y - 0.55, 'Shortcut: 1×1 Conv + BN (if in_ch ≠ out_ch) else 
         fontsize=8, ha='center', va='center', color='#636e72')
 
 # 右侧说明
-ax.text(14, 1.4, '• Each Encoder/Decoder stage contains 3 ResBlocks\n'
-                  '• Bottleneck contains 4 ResBlocks\n'
-                  '• Optional Mamba2DLayer can replace odd-index bottleneck blocks',
+ax.text(14, 1.4, '• Each Encoder/Decoder stage contains 2 ResBlocks\n'
+                  '• Bottleneck: 1 ResBlock + 1 Mamba2DLayer (when use_mamba=true)\n'
+                  '• Mamba2DLayer: 4-directional selective scan over spatial features',
         fontsize=9, ha='left', va='center', color=colors['text'])
 
+# ============ 课程学习5阶段说明 ============
+stage_box = FancyBboxPatch((0.5, 23.0), 19, 0.7, boxstyle="round,pad=0.03,rounding_size=0.1",
+                            facecolor=colors['stage'], edgecolor='white', linewidth=1.5, alpha=0.12)
+ax.add_patch(stage_box)
+stage_text = (
+    'Curriculum:  S1(10×10, 6fruit, match3~5) → S2(25×25) → S3(50×50) → '
+    'S4(rand 10~50) → S5(rand 10~50, rand 5~12 fruit, match5~8)'
+)
+ax.text(10, 23.35, stage_text, fontsize=9, ha='center', va='center',
+        color=colors['stage'], fontweight='bold')
+
 plt.tight_layout()
-plt.savefig('/home/jup33q/vllm_scripts/super_mirror/match3_cnn_trainer/architecture_diagram.png',
+import os
+save_dir = os.path.join(os.path.dirname(__file__), '..')
+os.makedirs(save_dir, exist_ok=True)
+plt.savefig(os.path.join(save_dir, 'architecture_diagram.png'),
             dpi=200, bbox_inches='tight', facecolor=colors['bg'])
 print("架构图已保存至: architecture_diagram.png")

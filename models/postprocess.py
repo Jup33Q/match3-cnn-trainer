@@ -4,7 +4,8 @@ import numpy as np
 
 
 def enforce_match3_rules(pred_mask: torch.Tensor, board: torch.Tensor,
-                         min_length: int = 3, threshold: float = 0.5) -> torch.Tensor:
+                         min_length: int = 3, threshold: float = 0.5,
+                         fruit_ids: torch.Tensor = None) -> torch.Tensor:
     """
     后处理: 强制 mask 满足三消规则
 
@@ -15,9 +16,10 @@ def enforce_match3_rules(pred_mask: torch.Tensor, board: torch.Tensor,
 
     Args:
         pred_mask: (B, 1, H, W) 概率图
-        board: (B, C, H, W) one-hot 棋盘状态
+        board: (B, C, H, W) 棋盘状态 (one-hot 或 RoPE)
         min_length: 最小消除长度
         threshold: 二值化阈值
+        fruit_ids: (B, H, W) LongTensor, 可选，直接传入fruit类型ID (RoPE模式下使用)
 
     Returns:
         corrected_mask: (B, 1, H, W) 修正后的概率 mask
@@ -25,8 +27,11 @@ def enforce_match3_rules(pred_mask: torch.Tensor, board: torch.Tensor,
     B, _, H, W = pred_mask.shape
     binary_mask = (pred_mask > threshold).squeeze(1).cpu().numpy()  # (B, H, W)
 
-    # 从 one-hot 恢复颜色索引
-    color_board = torch.argmax(board, dim=1).cpu().numpy()  # (B, H, W)
+    # 恢复颜色索引
+    if fruit_ids is not None:
+        color_board = fruit_ids.cpu().numpy()  # (B, H, W)
+    else:
+        color_board = torch.argmax(board, dim=1).cpu().numpy()  # (B, H, W)
 
     corrected = np.zeros_like(binary_mask, dtype=np.float32)
 
