@@ -54,12 +54,16 @@
     "log_dir": "./logs",
     "max_memory_gb": 8.0,
     "memory_warning_threshold": 0.85,
-    "use_cnn_rnn": true,
-    "rnn_hidden_ratio": 0.5,
-    "num_gru_layers": 1,
-    "rnn_dropout": 0.0,
     "use_transformer_output": true,
     "transformer_num_heads": 8,
     "transformer_ffn_ratio": 4,
-    "transformer_dropout": 0.0
+    "transformer_dropout": 0.0,
+    "num_router_branches": 3,
+    "router_branch_expansion": 2,
+    "router_branch_blocks": 2,
+    "router_branch_dilations": [
+        1,
+        2,
+        4
+    ]
 }

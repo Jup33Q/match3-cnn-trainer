@@ -28,11 +28,11 @@ class Match3Config:
     dilation_rates: List[int] = field(default_factory=lambda: [1, 2, 4, 8])  # 膨胀率序列
     dropout: float = 0.0                       # Dropout率
 
-    # --- CNN-RNN Bottleneck 参数 ---
-    use_cnn_rnn: bool = True                   # 是否在Bottleneck中启用CNN-RNN层
-    rnn_hidden_ratio: float = 0.5              # GRU hidden / channels 比例
-    num_gru_layers: int = 1                    # Bi-GRU 层数
-    rnn_dropout: float = 0.0                   # GRU dropout
+    # --- Soft-Router Bottleneck 参数 ---
+    num_router_branches: int = 3               # 并行CNN分支数量
+    router_branch_expansion: int = 2           # 分支内部通道扩增倍数
+    router_branch_blocks: int = 2              # 每个分支内BasicBlock数量
+    router_branch_dilations: List[int] = field(default_factory=lambda: [1, 2, 4])  # 各分支dilation配置
 
     # --- Transformer 输出参数 ---
     use_transformer_output: bool = True        # 是否在Decoder末端启用Transformer

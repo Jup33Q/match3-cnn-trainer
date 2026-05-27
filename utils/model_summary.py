@@ -6,7 +6,7 @@
 功能:
     1. 树形层级展示模型结构
     2. 按模块分组统计参数量与占比
-    3. 高亮 Mamba 层位置
+    3. 高亮 Router / 分支层位置
     4. 估算模型大小、FLOPs、显存占用
 """
 import argparse
@@ -138,7 +138,7 @@ def group_params_by_major_module(model: nn.Module) -> Dict[str, int]:
             groups["Stem"] += params
         elif name.startswith("encoders"):
             groups["Encoders"] += params
-        elif name.startswith("bottleneck"):
+        elif name.startswith("bottleneck") or name.startswith("router") or name.startswith("cnn_branches"):
             groups["Bottleneck"] += params
         elif name.startswith("decoders"):
             groups["Decoders"] += params
@@ -172,11 +172,11 @@ def print_model_tree(model: nn.Module, info_map: dict, total_params: int):
         out_shape = info.get("out_shape", None)
 
         module_type = module.__class__.__name__
-        is_mamba = "Mamba" in module_type
+        is_router = "Router" in module_type or "Branch" in module_type
         is_leaf = len(list(module.children())) == 0
 
-        # 高亮 Mamba 层
-        mamba_tag = " 🐍" if is_mamba else ""
+        # 高亮 Router / 分支层
+        router_tag = " 🔀" if is_router else ""
 
         # 只显示叶子节点或重要模块
         display_name = indent + name.split(".")[-1]
@@ -186,23 +186,23 @@ def print_model_tree(model: nn.Module, info_map: dict, total_params: int):
         param_str = format_number(params) if params else "-"
         shape_str = format_shape(out_shape) if out_shape else "-"
 
-        # 控制打印深度：只打印到 BasicBlock / Mamba2DLayer / EncoderBlock / DecoderBlock 级别
+        # 控制打印深度：只打印到 BasicBlock / EncoderBlock / DecoderBlock 级别
         # 不再展开 ResBlock 内部的 Conv2d / BN
-        important_types = ("BasicBlock", "Mamba2DLayer", "MambaBlock", "EncoderBlock",
-                           "DecoderBlock", "Sequential", "ModuleList", "ConvTranspose2d")
-        should_print = is_leaf or is_mamba or depth <= 1 or module_type in important_types
+        important_types = ("BasicBlock", "SoftRouter", "SoftRouterCNNBranch", "RouterSum",
+                           "EncoderBlock", "DecoderBlock", "Sequential", "ModuleList", "ConvTranspose2d")
+        should_print = is_leaf or is_router or depth <= 1 or module_type in important_types
         if not should_print:
             continue
 
         # 对叶子节点（且不是重要容器）汇总参数量到父级，这里只打印重要层级
-        if is_leaf and depth > 2 and module_type not in ("MambaBlock", "BasicBlock"):
+        if is_leaf and depth > 2 and module_type not in ("BasicBlock",):
             continue
 
         param_str = format_number(params) if params else "-"
         shape_str = format_shape(out_shape) if out_shape else "-"
 
-        line = f"  {display_name:<45} {module_type:<20} {param_str:>10} {shape_str:>18}{mamba_tag}"
-        if is_mamba:
+        line = f"  {display_name:<45} {module_type:<20} {param_str:>10} {shape_str:>18}{router_tag}"
+        if is_router:
             line = f"\033[1;35m{line}\033[0m"  # 紫色高亮
         print(line)
 
@@ -269,7 +269,7 @@ def print_config_summary(config: Match3Config):
         ("每 Stage ResBlock", config.blocks_per_stage),
         ("Bottleneck 块数", config.bottleneck_blocks),
         ("使用膨胀卷积", config.use_dilation),
-        ("启用 CNN-RNN", f"{'✅ 是' if getattr(config, 'use_cnn_rnn', True) else '❌ 否'} (hidden_ratio={getattr(config, 'rnn_hidden_ratio', 0.5)}, layers={getattr(config, 'num_gru_layers', 1)})"),
+        ("Soft-Router 分支", f"{getattr(config, 'num_router_branches', 3)} 支 (expansion={getattr(config, 'router_branch_expansion', 2)}, blocks={getattr(config, 'router_branch_blocks', 2)})"),
         ("启用 Transformer", f"{'✅ 是' if getattr(config, 'use_transformer_output', True) else '❌ 否'} (heads={getattr(config, 'transformer_num_heads', 8)}, ffn_ratio={getattr(config, 'transformer_ffn_ratio', 4)})"),
         ("Dropout", config.dropout),
         ("Batch Size", config.batch_size),
@@ -296,10 +296,10 @@ def analyze_model_elegantly(model: Match3UNet, input_shape: Tuple[int, ...]):
     print(f"     可训练参数:  {format_number(trainable_params):>10} ({trainable_params:,})")
     print(f"     模型大小:    {total_params * 4 / 1024 / 1024:.2f} MB (FP32) / {total_params * 2 / 1024 / 1024:.2f} MB (BF16)")
 
-    if getattr(model.cfg, 'use_cnn_rnn', False):
-        # 估算 CNN-RNN 参数量
-        rnn_params = sum(p.numel() for n, p in model.named_parameters() if "gru" in n.lower() or "row_proj" in n.lower() or "col_proj" in n.lower())
-        print(f"     🔄 CNN-RNN 相关: ~{format_number(rnn_params)}")
+    # 估算 Router / 分支参数量
+    router_params = sum(p.numel() for n, p in model.named_parameters() if "router" in n.lower() or "cnn_branches" in n.lower() or "bottleneck_pre" in n.lower() or "bottleneck_post" in n.lower())
+    if router_params:
+        print(f"     🔀 Router/Bottleneck 相关: ~{format_number(router_params)}")
     if getattr(model.cfg, 'use_transformer_output', False):
         # 估算 Transformer 参数量
         trans_params = sum(p.numel() for n, p in model.named_parameters() if "transformer" in n.lower() or "attn" in n.lower() or "ffn" in n.lower())
