@@ -63,6 +63,7 @@ class Match3Config:
     curriculum_enabled: bool = True
     curriculum_stages: List[int] = field(default_factory=lambda: [10, 25, 50, -1, -2])  # 棋盘递进 (-1=随机10~50, -2=stage5随机+RoPE)
     curriculum_epochs_per_stage: int = 20
+    early_stage_batch_size: int = 100  # 课程学习前两个阶段的 batch_size (棋盘较小可加大)
 
     # --- 后处理 ---
     mask_threshold: float = 0.5

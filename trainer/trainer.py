@@ -240,8 +240,14 @@ class Match3Trainer:
                 stage_label = "随机尺寸 10~50"
             else:
                 stage_label = f"{stage_size}x{stage_size}"
+            # 前两个阶段棋盘尺寸小，可加大 batch_size
+            stage_batch_size = self.cfg.batch_size
+            if self.cfg.curriculum_enabled and stage_idx < 2:
+                stage_batch_size = getattr(self.cfg, 'early_stage_batch_size', self.cfg.batch_size)
+
             print(f"\n{':'*50}")
-            print(f"课程学习阶段 {stage_idx + 1}/{len(stages)}: 棋盘尺寸 {stage_label}")
+            bs_info = f", batch={stage_batch_size}" if (self.cfg.curriculum_enabled and stage_idx < 2) else ""
+            print(f"课程学习阶段 {stage_idx + 1}/{len(stages)}: 棋盘尺寸 {stage_label}{bs_info}")
             print(f"{':'*50}")
 
             # 创建该阶段数据集
@@ -264,7 +270,7 @@ class Match3Trainer:
             persistent = num_workers > 0
 
             loader_kwargs = dict(
-                batch_size=self.cfg.batch_size,
+                batch_size=stage_batch_size,
                 num_workers=num_workers,
                 pin_memory=pin_memory,
             )
