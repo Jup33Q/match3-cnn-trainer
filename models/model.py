@@ -5,6 +5,7 @@
 - 每个 Encoder/Decoder stage 包含 **3个 BasicBlock** (ResNet风格)
 - Bottleneck 包含 **4个 BasicBlock**
 - 总参数量 ~174M, BF16训练显存 ~3.27GB
+- 激活函数使用 SiLU (Swish), 避免 inplace ReLU 导致的 segfault
 """
 import torch
 import torch.nn as nn
@@ -15,7 +16,7 @@ from .mamba_layer import Mamba2DLayer
 
 
 class BasicBlock(nn.Module):
-    """ResNet BasicBlock: 2x(3x3) + 残差连接 + 可选 Dropout"""
+    """ResNet BasicBlock: 2x(3x3) + 残差连接 + 可选 Dropout (SiLU激活)"""
 
     def __init__(self, in_ch: int, out_ch: int, dilation: int = 1, dropout: float = 0.0):
         super().__init__()
@@ -26,7 +27,7 @@ class BasicBlock(nn.Module):
         self.conv2 = nn.Conv2d(out_ch, out_ch, 3, padding=padding,
                                dilation=dilation, bias=False)
         self.bn2 = nn.BatchNorm2d(out_ch)
-        self.relu = nn.ReLU(inplace=True)
+        self.act = nn.SiLU()
         self.dropout = nn.Dropout2d(dropout) if dropout > 0 else nn.Identity()
         self.shortcut = nn.Sequential(
             nn.Conv2d(in_ch, out_ch, 1, bias=False),
@@ -35,10 +36,10 @@ class BasicBlock(nn.Module):
 
     def forward(self, x):
         residual = self.shortcut(x)
-        x = self.relu(self.bn1(self.conv1(x)))
+        x = self.act(self.bn1(self.conv1(x)))
         x = self.dropout(x)
         x = self.bn2(self.conv2(x))
-        return self.relu(x + residual)
+        return self.act(x + residual)
 
 
 class EncoderBlock(nn.Module):
@@ -114,7 +115,7 @@ class Match3UNet(nn.Module):
                       config.initial_kernel_size,
                       padding=config.initial_kernel_size // 2, bias=False),
             nn.BatchNorm2d(config.base_channels),
-            nn.ReLU(inplace=True)
+            nn.SiLU()
         )
 
         dropout = getattr(config, 'dropout', 0.0)

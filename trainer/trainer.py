@@ -252,10 +252,14 @@ class Match3Trainer:
             prefetch_factor = getattr(self.cfg, 'prefetch_factor', 2)
             num_workers = self.cfg.num_workers
 
-            # 安全策略: 如果 TensorFlow 已加载 (如 tensorboard 引入), 避免 fork 子进程导致 segfault
-            if num_workers > 0 and 'tensorflow' in sys.modules:
-                print(f"[WARN] 检测到 TensorFlow 已加载, 为避免 multiprocessing fork 导致 segfault, 自动禁用 DataLoader 多进程 (num_workers=0)")
-                num_workers = 0
+            # 安全策略: WSL/Linux 下 fork + DataLoader 多进程 + TensorFlow 极易 segfault
+            # 如果 TensorFlow 已加载, 或系统默认使用 fork, 自动降级为 num_workers=0
+            if num_workers > 0:
+                import multiprocessing
+                if 'tensorflow' in sys.modules or multiprocessing.get_start_method(allow_none=True) == 'fork':
+                    print(f"[WARN] 检测到 multiprocessing fork 环境与潜在不兼容库 (TensorFlow), "
+                          f"为避免 segfault, 自动禁用 DataLoader 多进程 (num_workers=0)")
+                    num_workers = 0
 
             persistent = num_workers > 0
 
