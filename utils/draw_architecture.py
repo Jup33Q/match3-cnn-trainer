@@ -1,12 +1,12 @@
-"""生成 Match3UNet 架构结构图 (RoPE 输入版, 5阶段课程学习)"""
+"""生成 Match3UNet 架构结构图 (Soft-Routed Parallel CNN 版)"""
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 import numpy as np
 
-fig, ax = plt.subplots(1, 1, figsize=(20, 28))
+fig, ax = plt.subplots(1, 1, figsize=(20, 30))
 ax.set_xlim(0, 20)
-ax.set_ylim(0, 28)
+ax.set_ylim(0, 30)
 ax.axis('off')
 
 # 颜色定义
@@ -22,30 +22,31 @@ colors = {
     'bg': '#f8f9fa',
     'rope': '#9b59b6',
     'stage': '#3498db',
-    'mamba': '#e17055'
+    'router': '#e17055',
+    'branch': '#fdcb6e',
 }
 
 fig.patch.set_facecolor(colors['bg'])
 ax.set_facecolor(colors['bg'])
 
 # 标题
-ax.text(10, 27.5, 'Match3UNet Architecture', fontsize=28, fontweight='bold',
+ax.text(10, 29.5, 'Match3UNet Architecture', fontsize=28, fontweight='bold',
         ha='center', va='center', color=colors['text'])
-ax.text(10, 26.8, 'Deep ResNet-U-Net for Match-3 Pattern Recognition (RoPE Input, 5-Stage Curriculum)',
+ax.text(10, 28.8, 'Soft-Routed Parallel CNN U-Net for Match-3 Pattern Recognition (RoPE Input, 5-Stage Curriculum)',
         fontsize=14, ha='center', va='center', color='#636e72')
 
 # 统计信息框
-stats_box = FancyBboxPatch((0.5, 25.5), 19, 1.0, boxstyle="round,pad=0.05,rounding_size=0.2",
+stats_box = FancyBboxPatch((0.5, 27.5), 19, 1.0, boxstyle="round,pad=0.05,rounding_size=0.2",
                             facecolor='white', edgecolor='#dfe6e9', linewidth=1.5)
 ax.add_patch(stats_box)
-ax.text(10, 26.0, 'Total Params: ~117M (CNN-RNN + Transformer)  |  Input: [B, 32, H, W] (Fruit RoPE)  |  Output: [B, 1, H, W]',
+ax.text(10, 28.0, 'Total Params: ~176M (Soft-Router + Transformer)  |  Input: [B, 32, H, W] (Fruit RoPE)  |  Output: [B, 1, H, W]',
         fontsize=12, ha='center', va='center', color=colors['text'], fontweight='bold')
 
 # ============ Fruit RoPE 编码框 ============
-rope_box = FancyBboxPatch((0.5, 24.0), 19, 0.9, boxstyle="round,pad=0.05,rounding_size=0.15",
+rope_box = FancyBboxPatch((0.5, 26.0), 19, 0.9, boxstyle="round,pad=0.05,rounding_size=0.15",
                            facecolor=colors['rope'], edgecolor='white', linewidth=2, alpha=0.15)
 ax.add_patch(rope_box)
-ax.text(10, 24.45, 'Fruit RoPE Encoding: fruit_type_id → 32-dim vector  (supports 5~12 dynamic fruit types)',
+ax.text(10, 26.45, 'Fruit RoPE Encoding: fruit_type_id → 32-dim vector  (supports 5~12 dynamic fruit types)',
         fontsize=11, ha='center', va='center', color=colors['rope'], fontweight='bold')
 
 def draw_block(ax, x, y, w, h, color, label, sublabel='', alpha=1.0):
@@ -72,127 +73,148 @@ def draw_skip(ax, x1, y1, x2, y2, color='#fdcb6e'):
                                connectionstyle=f'arc3,rad=0.35'))
 
 # ============ STEM ============
-draw_block(ax, 10, 22.5, 3.5, 0.9, colors['stem'], 'Stem',
-           'Conv7×7 → BN → Swish\n[32, H, W] → [32, H, W]')
+draw_block(ax, 10, 24.5, 3.5, 0.9, colors['stem'], 'Stem',
+           'Conv7×7 → GN → Swish\n[32, H, W] → [32, H, W]')
 
 # ============ ENCODER ============
 enc_stages = [
-    ('Encoder 1', '[32,50,50]→[64,25,25]', '3×ResBlock + MaxPool', 21.0),
-    ('Encoder 2', '[64,25,25]→[128,12,12]', '3×ResBlock + MaxPool', 19.5),
-    ('Encoder 3', '[128,12,12]→[256,6,6]', '3×ResBlock + MaxPool', 18.0),
-    ('Encoder 4', '[256,6,6]→[512,3,3]', '3×ResBlock + MaxPool', 16.5),
-    ('Encoder 5', '[512,3,3]→[1024,1,1]', '3×ResBlock + MaxPool', 15.0),
+    ('Encoder 1', '[32,50,50]→[64,25,25]', '2×ResBlock + MaxPool', 23.0),
+    ('Encoder 2', '[64,25,25]→[128,12,12]', '2×ResBlock + MaxPool', 21.5),
+    ('Encoder 3', '[128,12,12]→[256,6,6]', '2×ResBlock + MaxPool', 20.0),
+    ('Encoder 4', '[256,6,6]→[512,3,3]', '2×ResBlock + MaxPool', 18.5),
+    ('Encoder 5', '[512,3,3]→[1024,1,1]', '2×ResBlock + MaxPool', 17.0),
 ]
 
 for i, (name, dims, desc, y) in enumerate(enc_stages):
     draw_block(ax, 10, y, 4.2, 0.9, colors['encoder'], name, f'{desc}\n{dims}')
     draw_arrow(ax, 10, y + 0.9 + 0.15, 10, y + 0.45)
 
-# ============ BOTTLENECK ============
-# With use_cnn_rnn=true, bottleneck_blocks=4: ResBlock + CNN-RNN + CNN-RNN + ResBlock
-draw_block(ax, 10, 13.2, 4.2, 1.0, colors['bottleneck'], 'Bottleneck',
-           'ResBlock + 2×CNN-RNN + ResBlock\n[1024, 1, 1] → [1024, 1, 1]')
-# CNN-RNN indicator
-rnn_box = FancyBboxPatch((10 + 0.8, 13.2 - 0.25), 1.6, 0.5,
-                          boxstyle="round,pad=0.02", facecolor=colors['mamba'],
-                          edgecolor='white', linewidth=1.5, alpha=0.9)
-ax.add_patch(rnn_box)
-ax.text(10 + 1.6, 13.2, '2×CNN-RNN', fontsize=7, ha='center', va='center',
+# ============ BOTTLENECK (Soft-Router) ============
+# bottleneck_pre
+pre_y = 15.8
+draw_block(ax, 10, pre_y, 3.0, 0.6, colors['bottleneck'], 'bottleneck_pre',
+           'ResBlock [1024,1,1]')
+draw_arrow(ax, 10, 17.0 - 0.45, 10, pre_y + 0.3)
+
+# Main bottleneck area
+bot_y = 14.3
+draw_block(ax, 10, bot_y, 5.5, 1.6, colors['bottleneck'], 'Soft-Router Bottleneck',
+           'Router + 3×Parallel CNN Branch + RouterSum\n[1024,1,1] → [1024,1,1]')
+
+# Router sub-box (right side)
+router_box = FancyBboxPatch((10 + 1.4, bot_y + 0.18), 1.3, 0.42,
+                             boxstyle="round,pad=0.02", facecolor=colors['router'],
+                             edgecolor='white', linewidth=1.5, alpha=0.95)
+ax.add_patch(router_box)
+ax.text(10 + 2.05, bot_y + 0.39, 'Router', fontsize=7, ha='center', va='center',
         color='white', fontweight='bold')
-draw_arrow(ax, 10, 14.55, 10, 13.7)
+
+# Branch sub-boxes (left side inside bottleneck)
+branch_labels = ['Branch1\ndil=1', 'Branch2\ndil=2', 'Branch3\ndil=4']
+for idx, bl in enumerate(branch_labels):
+    bx = 10 - 1.6 + idx * 1.15
+    by = bot_y - 0.22
+    b_box = FancyBboxPatch((bx - 0.48, by - 0.22), 0.96, 0.44,
+                            boxstyle="round,pad=0.02", facecolor=colors['branch'],
+                            edgecolor='white', linewidth=1.2, alpha=0.9)
+    ax.add_patch(b_box)
+    ax.text(bx, by, bl, fontsize=7, ha='center', va='center',
+            color='white', fontweight='bold')
+
+draw_arrow(ax, 10, pre_y - 0.3, 10, bot_y + 0.8)
+
+# bottleneck_post
+post_y = 13.0
+draw_block(ax, 10, post_y, 3.0, 0.6, colors['bottleneck'], 'bottleneck_post',
+           'ResBlock [1024,1,1]')
+draw_arrow(ax, 10, bot_y - 0.8, 10, post_y + 0.3)
 
 # ============ DECODER ============
 dec_stages = [
-    ('Decoder 5', '[1024,1,1]→[512,3,3]', 'UpConv + Concat + 3×ResBlock', 11.7),
-    ('Decoder 4', '[512,3,3]→[256,6,6]', 'UpConv + Concat + 3×ResBlock', 10.2),
-    ('Decoder 3', '[256,6,6]→[128,12,12]', 'UpConv + Concat + 3×ResBlock', 8.7),
-    ('Decoder 2', '[128,12,12]→[64,25,25]', 'UpConv + Concat + 3×ResBlock', 7.2),
-    ('Decoder 1', '[64,25,25]→[32,50,50]', 'UpConv + Concat + 3×ResBlock', 5.7),
+    ('Decoder 5', '[1024,1,1]→[512,3,3]', 'UpSample + Conv + Concat + 2×ResBlock', 11.7),
+    ('Decoder 4', '[512,3,3]→[256,6,6]', 'UpSample + Conv + Concat + 2×ResBlock', 10.2),
+    ('Decoder 3', '[256,6,6]→[128,12,12]', 'UpSample + Conv + Concat + 2×ResBlock', 8.7),
+    ('Decoder 2', '[128,12,12]→[64,25,25]', 'UpSample + Conv + Concat + 2×ResBlock', 7.2),
+    ('Decoder 1', '[64,25,25]→[32,50,50]', 'UpSample + Conv + Concat + 2×ResBlock', 5.7),
 ]
 
 for i, (name, dims, desc, y) in enumerate(dec_stages):
     draw_block(ax, 10, y, 4.2, 0.9, colors['decoder'], name, f'{desc}\n{dims}')
     if i == 0:
-        draw_arrow(ax, 10, 12.65, 10, y + 0.45)
+        draw_arrow(ax, 10, post_y - 0.3, 10, y + 0.45)
     else:
         draw_arrow(ax, 10, y + 0.9 + 0.15 + 0.6, 10, y + 0.45)
 
 # ============ TRANSFORMER OUTPUT BLOCK ============
-draw_block(ax, 10, 5.0, 3.5, 0.9, colors['stage'], 'Transformer Block',
+draw_block(ax, 10, 4.0, 3.5, 0.9, colors['stage'], 'Transformer Block',
            'MSA + FFN\n[32, 50, 50] → [32, 50, 50]')
-draw_arrow(ax, 10, 5.25, 10, 5.45)
+draw_arrow(ax, 10, 4.25, 10, 4.45)
 
 # ============ OUTPUT HEAD ============
-draw_block(ax, 10, 3.5, 3.5, 0.9, colors['output'], 'Output Head',
+draw_block(ax, 10, 2.5, 3.5, 0.9, colors['output'], 'Output Head',
            'Conv 1×1 (logits)\n[32, 50, 50] → [1, 50, 50]')
-draw_arrow(ax, 10, 4.55, 10, 3.95)
+draw_arrow(ax, 10, 3.55, 10, 2.95)
 
 # ============ SKIP CONNECTIONS ============
 skip_pairs = [
-    (21.0, 5.7),   # Enc1 -> Dec1
-    (19.5, 7.2),   # Enc2 -> Dec2
-    (18.0, 8.7),   # Enc3 -> Dec3
-    (16.5, 10.2),  # Enc4 -> Dec4
-    (15.0, 11.7),  # Enc5 -> Dec5
+    (23.0, 5.7),   # Enc1 -> Dec1
+    (21.5, 7.2),   # Enc2 -> Dec2
+    (20.0, 8.7),   # Enc3 -> Dec3
+    (18.5, 10.2),  # Enc4 -> Dec4
+    (17.0, 11.7),  # Enc5 -> Dec5
 ]
 
 for enc_y, dec_y in skip_pairs:
     draw_skip(ax, 12.1, enc_y, 12.1, dec_y)
 
 # Skip connection 标签
-ax.text(15.5, 13.35, 'Skip Connections\n(Concatenation)', fontsize=10, ha='center', va='center',
+ax.text(15.5, 14.35, 'Skip Connections\n(Concatenation)', fontsize=10, ha='center', va='center',
         color='#d63031', fontweight='bold', style='italic')
 
 # ============ LEGEND ============
 legend_items = [
-    (colors['stem'], 'Stem: 7×7 Conv + BN + Swish'),
-    (colors['encoder'], 'Encoder: 3×ResBlock + MaxPool2d'),
-    (colors['bottleneck'], 'Bottleneck: ResBlock + 2×CNN-RNN + ResBlock'),
-    (colors['decoder'], 'Decoder: UpConv + Concat + 3×ResBlock'),
-    (colors['stage'], 'Transformer: MSA + FFN'),
+    (colors['stem'], 'Stem: 7×7 Conv + GN + Swish'),
+    (colors['encoder'], 'Encoder: 2×ResBlock + MaxPool2d'),
+    (colors['bottleneck'], 'Bottleneck: Soft-Router + 3×Parallel CNN'),
+    (colors['decoder'], 'Decoder: UpSample + Concat + 2×ResBlock'),
+    (colors['stage'], 'Transformer: Pre-LN MSA + FFN'),
     (colors['output'], 'Output: 1×1 Conv (logits)'),
 ]
 
-legend_y = 2.8
+legend_y = 1.5
 for i, (color, text) in enumerate(legend_items):
-    lx = 2.0 + i * 3.2
+    lx = 1.8 + i * 3.1
     box = FancyBboxPatch((lx - 0.25, legend_y - 0.15), 0.5, 0.3,
                           boxstyle="round,pad=0.02", facecolor=color, edgecolor='white')
     ax.add_patch(box)
     ax.text(lx + 0.4, legend_y, text, fontsize=8, ha='left', va='center', color=colors['text'])
 
 # ============ RESBLOCK DETAIL ============
-detail_box = FancyBboxPatch((0.5, 0.3), 19, 1.8, boxstyle="round,pad=0.05,rounding_size=0.15",
+detail_box = FancyBboxPatch((0.5, 0.0), 19, 1.2, boxstyle="round,pad=0.05,rounding_size=0.15",
                              facecolor='white', edgecolor='#dfe6e9', linewidth=1.5)
 ax.add_patch(detail_box)
-ax.text(10, 1.85, 'ResBlock (BasicBlock) Detail', fontsize=12, ha='center', va='center',
+ax.text(10, 0.95, 'ResBlock (BasicBlock) Detail', fontsize=12, ha='center', va='center',
         color=colors['text'], fontweight='bold')
 
 # 画 ResBlock 内部结构示意
-rb_x = 4.5
-rb_y = 1.15
-ax.add_patch(FancyBboxPatch((rb_x - 1.8, rb_y - 0.35), 3.6, 0.7,
+rb_x = 5.0
+rb_y = 0.45
+ax.add_patch(FancyBboxPatch((rb_x - 2.2, rb_y - 0.3), 4.4, 0.6,
                              boxstyle="round,pad=0.02", facecolor='#ecf0f1', edgecolor='#b2bec3'))
-ax.text(rb_x, rb_y, 'Conv3×3 → BN → Swish → Conv3×3 → BN → (+Shortcut) → Swish',
+ax.text(rb_x, rb_y, 'Conv3×3 → GN → Swish → Conv3×3 → GN → SE → LayerScale → DropPath → (+Shortcut) → Swish',
         fontsize=9, ha='center', va='center', color=colors['text'])
-ax.text(rb_x, rb_y - 0.55, 'Shortcut: 1×1 Conv + BN (if in_ch ≠ out_ch) else Identity',
+ax.text(rb_x, rb_y - 0.5, 'Shortcut: 1×1 Conv + GN (if in_ch ≠ out_ch) else Identity  |  Init: Xavier Normal',
         fontsize=8, ha='center', va='center', color='#636e72')
 
-# 右侧说明
-ax.text(14, 1.4, '• Each Encoder/Decoder stage contains 2 ResBlocks\n'
-                  '• Bottleneck: 1 CNNRNNBottleneck + 1 ResBlock (when use_cnn_rnn=true)\n'
-                  '• Transformer: Pre-LN MSA + FFN on full-resolution decoder output',
-        fontsize=9, ha='left', va='center', color=colors['text'])
-
 # ============ 课程学习5阶段说明 ============
-stage_box = FancyBboxPatch((0.5, 23.0), 19, 0.7, boxstyle="round,pad=0.03,rounding_size=0.1",
+stage_box = FancyBboxPatch((0.5, 25.0), 19, 0.7, boxstyle="round,pad=0.03,rounding_size=0.1",
                             facecolor=colors['stage'], edgecolor='white', linewidth=1.5, alpha=0.12)
 ax.add_patch(stage_box)
 stage_text = (
     'Curriculum:  S1(10×10, 6fruit, match3~5) → S2(25×25) → S3(50×50) → '
     'S4(rand 10~50) → S5(rand 10~50, rand 5~12 fruit, match5~8)'
 )
-ax.text(10, 23.35, stage_text, fontsize=9, ha='center', va='center',
+ax.text(10, 25.35, stage_text, fontsize=9, ha='center', va='center',
         color=colors['stage'], fontweight='bold')
 
 plt.tight_layout()
