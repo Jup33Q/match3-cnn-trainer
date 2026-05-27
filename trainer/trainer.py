@@ -534,7 +534,7 @@ class Match3Trainer:
             "# Column mapping: sample_idx=SampleID | sample_type=Pos/Neg | fruit_type=Input | gt_label=Code | pred_prob/pred_label=Model",
             "sample_idx,sample_type,y,x,fruit_type,gt_label,pred_prob,pred_label",
         ]
-        for sample_idx, (board, gt_mask, pred_mask, sample_type) in enumerate(samples):
+        for sample_idx, (board, gt_mask, pred_mask, sample_type, _) in enumerate(samples):
             board_np = board.argmax(dim=0).cpu().numpy()
             gt_np = gt_mask.squeeze().cpu().numpy()
             pred_prob = torch.sigmoid(pred_mask).squeeze().float().cpu().numpy()
