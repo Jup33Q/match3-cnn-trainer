@@ -13,7 +13,7 @@
     "initial_kernel_size": 7,
     "base_channels": 32,
     "num_encoder_blocks": 5,
-    "blocks_per_stage": 3,
+    "blocks_per_stage": 2,
     "bottleneck_blocks": 4,
     "use_dilation": true,
     "dilation_rates": [
@@ -59,8 +59,8 @@
     "transformer_ffn_ratio": 4,
     "transformer_dropout": 0.0,
     "num_router_branches": 3,
-    "router_branch_expansion": 2,
-    "router_branch_blocks": 2,
+    "router_branch_expansion": 1,
+    "router_branch_blocks": 1,
     "router_branch_dilations": [
         1,
         2,

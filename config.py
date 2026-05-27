@@ -22,7 +22,7 @@ class Match3Config:
     initial_kernel_size: int = 7               # 首层大卷积核 (捕获局部连续性)
     base_channels: int = 32                    # 基础通道数
     num_encoder_blocks: int = 5                # Encoder 块数量 (5层深度)
-    blocks_per_stage: int = 3                  # 每个Encoder/Decoder stage的ResBlock数
+    blocks_per_stage: int = 2                  # 每个Encoder/Decoder stage的ResBlock数
     bottleneck_blocks: int = 4                 # Bottleneck中的块数
     use_dilation: bool = True                  # 是否使用膨胀卷积
     dilation_rates: List[int] = field(default_factory=lambda: [1, 2, 4, 8])  # 膨胀率序列
@@ -30,8 +30,8 @@ class Match3Config:
 
     # --- Soft-Router Bottleneck 参数 ---
     num_router_branches: int = 3               # 并行CNN分支数量
-    router_branch_expansion: int = 2           # 分支内部通道扩增倍数
-    router_branch_blocks: int = 2              # 每个分支内BasicBlock数量
+    router_branch_expansion: int = 1           # 分支内部通道扩增倍数 (1=不扩增，减小模型)
+    router_branch_blocks: int = 1              # 每个分支内BasicBlock数量
     router_branch_dilations: List[int] = field(default_factory=lambda: [1, 2, 4])  # 各分支dilation配置
 
     # --- Transformer 输出参数 ---

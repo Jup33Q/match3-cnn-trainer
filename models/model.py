@@ -461,6 +461,22 @@ class Match3UNet(nn.Module):
         # Output head
         self.final_conv = nn.Conv2d(ch, 1, 1)
 
+        # Xavier (Glorot) Normal 初始化
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        """Xavier Normal 初始化所有可学习参数"""
+        for m in self.modules():
+            if isinstance(m, (nn.Conv2d, nn.Linear)):
+                nn.init.xavier_normal_(m.weight, gain=1.0)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, (nn.GroupNorm, nn.LayerNorm, nn.BatchNorm2d)):
+                if m.weight is not None:
+                    nn.init.ones_(m.weight)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+
     def forward(self, x):
         x = self.stem(x)
         skips = []
