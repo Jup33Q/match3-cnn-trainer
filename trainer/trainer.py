@@ -2,6 +2,7 @@
 import os
 import random
 import subprocess
+import sys
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
@@ -249,14 +250,21 @@ class Match3Trainer:
 
             pin_memory = getattr(self.cfg, 'pin_memory', True)
             prefetch_factor = getattr(self.cfg, 'prefetch_factor', 2)
-            persistent = self.cfg.num_workers > 0
+            num_workers = self.cfg.num_workers
+
+            # 安全策略: 如果 TensorFlow 已加载 (如 tensorboard 引入), 避免 fork 子进程导致 segfault
+            if num_workers > 0 and 'tensorflow' in sys.modules:
+                print(f"[WARN] 检测到 TensorFlow 已加载, 为避免 multiprocessing fork 导致 segfault, 自动禁用 DataLoader 多进程 (num_workers=0)")
+                num_workers = 0
+
+            persistent = num_workers > 0
 
             loader_kwargs = dict(
                 batch_size=self.cfg.batch_size,
-                num_workers=self.cfg.num_workers,
+                num_workers=num_workers,
                 pin_memory=pin_memory,
             )
-            if self.cfg.num_workers > 0:
+            if num_workers > 0:
                 loader_kwargs['prefetch_factor'] = prefetch_factor
                 loader_kwargs['persistent_workers'] = persistent
 
