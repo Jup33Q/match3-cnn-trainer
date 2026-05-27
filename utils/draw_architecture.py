@@ -38,7 +38,7 @@ ax.text(10, 26.8, 'Deep ResNet-U-Net for Match-3 Pattern Recognition (RoPE Input
 stats_box = FancyBboxPatch((0.5, 25.5), 19, 1.0, boxstyle="round,pad=0.05,rounding_size=0.2",
                             facecolor='white', edgecolor='#dfe6e9', linewidth=1.5)
 ax.add_patch(stats_box)
-ax.text(10, 26.0, 'Total Params: ~120M (with Mamba) / ~90M (w/o Mamba)  |  Input: [B, 32, H, W] (Fruit RoPE)  |  Output: [B, 1, H, W]',
+ax.text(10, 26.0, 'Total Params: ~117M (CNN-RNN + Transformer)  |  Input: [B, 32, H, W] (Fruit RoPE)  |  Output: [B, 1, H, W]',
         fontsize=12, ha='center', va='center', color=colors['text'], fontweight='bold')
 
 # ============ Fruit RoPE 编码框 ============
@@ -89,15 +89,15 @@ for i, (name, dims, desc, y) in enumerate(enc_stages):
     draw_arrow(ax, 10, y + 0.9 + 0.15, 10, y + 0.45)
 
 # ============ BOTTLENECK ============
-# With use_mamba=true, bottleneck_blocks=2: BasicBlock + Mamba2DLayer
+# With use_cnn_rnn=true, bottleneck_blocks=2: CNNRNNBottleneck + BasicBlock
 draw_block(ax, 10, 13.2, 4.0, 1.0, colors['bottleneck'], 'Bottleneck',
-           'BasicBlock + Mamba2DLayer\n[1024, 1, 1] → [1024, 1, 1]')
-# Mamba indicator
-mamba_box = FancyBboxPatch((10 + 1.2, 13.2 - 0.25), 1.6, 0.5,
-                            boxstyle="round,pad=0.02", facecolor=colors['mamba'],
-                            edgecolor='white', linewidth=1.5, alpha=0.9)
-ax.add_patch(mamba_box)
-ax.text(10 + 2.0, 13.2, 'Mamba', fontsize=7, ha='center', va='center',
+           'CNNRNNBottleneck + BasicBlock\n[1024, 1, 1] → [1024, 1, 1]')
+# CNN-RNN indicator
+rnn_box = FancyBboxPatch((10 + 1.2, 13.2 - 0.25), 1.6, 0.5,
+                          boxstyle="round,pad=0.02", facecolor=colors['mamba'],
+                          edgecolor='white', linewidth=1.5, alpha=0.9)
+ax.add_patch(rnn_box)
+ax.text(10 + 2.0, 13.2, 'CNN-RNN', fontsize=7, ha='center', va='center',
         color='white', fontweight='bold')
 draw_arrow(ax, 10, 14.55, 10, 13.7)
 
@@ -117,10 +117,15 @@ for i, (name, dims, desc, y) in enumerate(dec_stages):
     else:
         draw_arrow(ax, 10, y + 0.9 + 0.15 + 0.6, 10, y + 0.45)
 
+# ============ TRANSFORMER OUTPUT BLOCK ============
+draw_block(ax, 10, 5.0, 3.5, 0.9, colors['stage'], 'Transformer Block',
+           'MSA + FFN\n[32, 50, 50] → [32, 50, 50]')
+draw_arrow(ax, 10, 5.25, 10, 5.45)
+
 # ============ OUTPUT HEAD ============
-draw_block(ax, 10, 4.2, 3.5, 0.9, colors['output'], 'Output Head',
+draw_block(ax, 10, 3.5, 3.5, 0.9, colors['output'], 'Output Head',
            'Conv 1×1 (logits)\n[32, 50, 50] → [1, 50, 50]')
-draw_arrow(ax, 10, 5.25, 10, 4.65)
+draw_arrow(ax, 10, 4.55, 10, 3.95)
 
 # ============ SKIP CONNECTIONS ============
 skip_pairs = [
@@ -142,14 +147,15 @@ ax.text(15.5, 13.35, 'Skip Connections\n(Concatenation)', fontsize=10, ha='cente
 legend_items = [
     (colors['stem'], 'Stem: 7×7 Conv + BN + ReLU'),
     (colors['encoder'], 'Encoder: 2×ResBlock + MaxPool2d'),
-    (colors['bottleneck'], 'Bottleneck: ResBlock + Mamba2D'),
+    (colors['bottleneck'], 'Bottleneck: CNN-RNN + ResBlock'),
     (colors['decoder'], 'Decoder: UpConv + Concat + 2×ResBlock'),
+    (colors['stage'], 'Transformer: MSA + FFN'),
     (colors['output'], 'Output: 1×1 Conv (logits)'),
 ]
 
 legend_y = 2.8
 for i, (color, text) in enumerate(legend_items):
-    lx = 2.5 + i * 3.5
+    lx = 2.0 + i * 3.2
     box = FancyBboxPatch((lx - 0.25, legend_y - 0.15), 0.5, 0.3,
                           boxstyle="round,pad=0.02", facecolor=color, edgecolor='white')
     ax.add_patch(box)
@@ -174,8 +180,8 @@ ax.text(rb_x, rb_y - 0.55, 'Shortcut: 1×1 Conv + BN (if in_ch ≠ out_ch) else 
 
 # 右侧说明
 ax.text(14, 1.4, '• Each Encoder/Decoder stage contains 2 ResBlocks\n'
-                  '• Bottleneck: 1 ResBlock + 1 Mamba2DLayer (when use_mamba=true)\n'
-                  '• Mamba2DLayer: 4-directional selective scan over spatial features',
+                  '• Bottleneck: 1 CNNRNNBottleneck + 1 ResBlock (when use_cnn_rnn=true)\n'
+                  '• Transformer: Pre-LN MSA + FFN on full-resolution decoder output',
         fontsize=9, ha='left', va='center', color=colors['text'])
 
 # ============ 课程学习5阶段说明 ============

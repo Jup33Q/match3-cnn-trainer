@@ -269,7 +269,8 @@ def print_config_summary(config: Match3Config):
         ("每 Stage ResBlock", config.blocks_per_stage),
         ("Bottleneck 块数", config.bottleneck_blocks),
         ("使用膨胀卷积", config.use_dilation),
-        ("启用 Mamba", f"{'✅ 是' if config.use_mamba else '❌ 否'} (d_state={config.mamba_d_state}, expand={config.mamba_expand})"),
+        ("启用 CNN-RNN", f"{'✅ 是' if getattr(config, 'use_cnn_rnn', True) else '❌ 否'} (hidden_ratio={getattr(config, 'rnn_hidden_ratio', 0.5)}, layers={getattr(config, 'num_gru_layers', 1)})"),
+        ("启用 Transformer", f"{'✅ 是' if getattr(config, 'use_transformer_output', True) else '❌ 否'} (heads={getattr(config, 'transformer_num_heads', 8)}, ffn_ratio={getattr(config, 'transformer_ffn_ratio', 4)})"),
         ("Dropout", config.dropout),
         ("Batch Size", config.batch_size),
         ("训练精度", config.precision.upper()),
@@ -295,10 +296,14 @@ def analyze_model_elegantly(model: Match3UNet, input_shape: Tuple[int, ...]):
     print(f"     可训练参数:  {format_number(trainable_params):>10} ({trainable_params:,})")
     print(f"     模型大小:    {total_params * 4 / 1024 / 1024:.2f} MB (FP32) / {total_params * 2 / 1024 / 1024:.2f} MB (BF16)")
 
-    if getattr(model.cfg, 'use_mamba', False):
-        # 估算 Mamba 参数量
-        mamba_params = sum(p.numel() for n, p in model.named_parameters() if "mamba" in n.lower() or "bottleneck" in n.lower())
-        print(f"     🐍 Mamba 相关: ~{format_number(mamba_params)}")
+    if getattr(model.cfg, 'use_cnn_rnn', False):
+        # 估算 CNN-RNN 参数量
+        rnn_params = sum(p.numel() for n, p in model.named_parameters() if "gru" in n.lower() or "row_proj" in n.lower() or "col_proj" in n.lower())
+        print(f"     🔄 CNN-RNN 相关: ~{format_number(rnn_params)}")
+    if getattr(model.cfg, 'use_transformer_output', False):
+        # 估算 Transformer 参数量
+        trans_params = sum(p.numel() for n, p in model.named_parameters() if "transformer" in n.lower() or "attn" in n.lower() or "ffn" in n.lower())
+        print(f"     ⚡ Transformer 相关: ~{format_number(trans_params)}")
 
     # 前向传播收集信息
     x = torch.randn(*input_shape)

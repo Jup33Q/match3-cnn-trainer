@@ -3,7 +3,11 @@
     "num_fruit_types": 6,
     "train_samples": 50000,
     "val_samples": 5000,
-    "difficulty_ratio": [0.3, 0.4, 0.3],
+    "difficulty_ratio": [
+        0.3,
+        0.4,
+        0.3
+    ],
     "min_match_length": 3,
     "max_match_length": 5,
     "initial_kernel_size": 7,
@@ -12,12 +16,13 @@
     "blocks_per_stage": 2,
     "bottleneck_blocks": 2,
     "use_dilation": true,
-    "dilation_rates": [1, 2, 4, 8],
+    "dilation_rates": [
+        1,
+        2,
+        4,
+        8
+    ],
     "dropout": 0.0,
-    "use_mamba": true,
-    "mamba_d_state": 16,
-    "mamba_d_conv": 4,
-    "mamba_expand": 2,
     "batch_size": 40,
     "num_epochs": 80,
     "learning_rate": 0.001,
@@ -32,7 +37,11 @@
     "focal_gamma": 2.0,
     "focal_alpha": 0.25,
     "curriculum_enabled": true,
-    "curriculum_stages": [10, 25, 50],
+    "curriculum_stages": [
+        10,
+        25,
+        50
+    ],
     "curriculum_epochs_per_stage": 20,
     "mask_threshold": 0.5,
     "enforce_connectivity": true,
@@ -44,5 +53,13 @@
     "checkpoint_dir": "./checkpoints",
     "log_dir": "./logs",
     "max_memory_gb": 8.0,
-    "memory_warning_threshold": 0.85
+    "memory_warning_threshold": 0.85,
+    "use_cnn_rnn": true,
+    "rnn_hidden_ratio": 0.5,
+    "num_gru_layers": 1,
+    "rnn_dropout": 0.0,
+    "use_transformer_output": true,
+    "transformer_num_heads": 8,
+    "transformer_ffn_ratio": 4,
+    "transformer_dropout": 0.0
 }

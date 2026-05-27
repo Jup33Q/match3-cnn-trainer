@@ -1,6 +1,6 @@
 # Match-3 CNN U-Net Pattern Recognition Trainer (50×50)
 
-> 基于 **深度 ResNet-U-Net** 的三消（Match-3）Pattern 标注模型训练器。
+> 基于 **CNN-RNN-Transformer U-Net** 的三消（Match-3）Pattern 标注模型训练器。
 >
 > 支持 50×50 棋盘、BF16 混合精度训练、课程学习（5阶段递进）、RoPE Fruit 编码、显存监控、断点恢复。
 
@@ -12,7 +12,7 @@
 |------|------|
 | Python | >= 3.9 |
 | CUDA | >= 13.0 (推荐) |
-| GPU 显存 | >= 8GB (训练峰值 ~7GB，batch=80) |
+| GPU 显存 | >= 6GB (训练峰值 ~4.7GB，batch=200；~2.2GB，batch=40) |
 
 ## 依赖安装
 
@@ -48,15 +48,18 @@ pip install -r requirements.txt
 pip install -r requirements.txt
 ```
 
-### 可选：启用 Mamba 层
+### 架构概述
 
-如需在模型中使用 Mamba 状态空间模型层：
+模型采用 **CNN-RNN Bottleneck + Transformer Output** 的混合设计：
 
-```bash
-# 必须先装好 torch，再安装 mamba-ssm
-pip install mamba-ssm causal-conv1d
-# 或参考官方指引: https://github.com/state-spaces/mamba
-```
+- **Encoder/Decoder**: 5 层 ResNet-U-Net，Skip Connection 保持空间精度
+- **Bottleneck**: CNN 局部精炼 + 双向 Row/Col GRU 序列建模（替代 Mamba）
+- **Output**: Transformer Spatial Block (MSA + FFN) 聚合全局上下文后输出 logits
+
+相比原 Mamba 版本：
+- 参数量更省 (~117M vs ~120M)
+- 反向传播更快（PyTorch 原生 GRU，无自定义 autograd 循环）
+- 显存占用更低（batch=40/50×50 峰值 ~2.2GB）
 
 ---
 
@@ -80,7 +83,7 @@ match3_cnn_trainer/
 ├── models/                      # 模型模块
 │   ├── __init__.py
 │   ├── model.py                 # 深度 ResNet-U-Net 模型 (RoPE 输入)
-│   ├── mamba_layer.py           # 可选 Mamba2D 状态空间层
+│   ├── mamba_layer.py           # (已弃用) 原 Mamba2D 状态空间层，现由 CNN-RNN 替代
 │   └── postprocess.py           # 三消规则后处理 (支持 fruit_ids)
 ├── trainer/                     # 训练模块
 │   ├── __init__.py
@@ -100,7 +103,8 @@ match3_cnn_trainer/
 └── tests/                       # 测试脚本
     ├── test_pattern_core.py     # Pattern 核心逻辑测试
     ├── test_memory.py           # 显存占用实测
-    └── test_training.py         # 端到端训练流程验证
+    ├── test_training.py         # 端到端训练流程验证
+    └── test_model_new.py        # CNN-RNN-Transformer 架构验证测试
 ```
 
 ---
@@ -126,11 +130,14 @@ python utils/model_summary.py --batch_size 40 --board_size 50
 # Pattern 核心逻辑测试
 python tests/test_pattern_core.py
 
-# 显存占用实测 (batch=80, 50×50)
+# 显存占用实测 (batch=200, 50×50)
 python tests/test_memory.py
 
 # 端到端迷你训练测试
 python tests/test_training.py
+
+# CNN-RNN-Transformer 架构验证
+python tests/test_model_new.py
 ```
 
 ### 4. 训练脚本使用 (`main.py`)
@@ -348,10 +355,13 @@ git push modelscope main
 | `base_channels` | 32 | 首层通道数 |
 | `num_encoder_blocks` | 5 | Encoder/Decoder 层数 |
 | `blocks_per_stage` | 2 | 每 Stage ResBlock 数量 |
-| `bottleneck_blocks` | 2 | Bottleneck ResBlock 数量 |
-| `use_mamba` | **true** | 是否在 Bottleneck 中启用 Mamba2D 层 (默认启用) |
-| `mamba_d_state` | 16 | Mamba 状态空间维度 |
-| `mamba_expand` | 2 | Mamba 内部扩展因子 |
+| `bottleneck_blocks` | 2 | Bottleneck 块数量 |
+| `use_cnn_rnn` | **true** | 是否在 Bottleneck 中启用 CNN-RNN 层 |
+| `rnn_hidden_ratio` | 0.5 | GRU hidden / channels 比例 |
+| `num_gru_layers` | 1 | Bi-GRU 层数 |
+| `use_transformer_output` | **true** | 是否在 Decoder 末端启用 Transformer |
+| `transformer_num_heads` | 8 | MSA 注意力头数 |
+| `transformer_ffn_ratio` | 4 | FFN 扩展比 |
 | `use_dilation` | true | 是否启用膨胀卷积 |
 | `dilation_rates` | [1,2,4,8] | 各层膨胀率 |
 | `curriculum_enabled` | true | 是否启用课程学习 |
@@ -370,15 +380,21 @@ git push modelscope main
 
 ### 显存与稳定性调节指南
 
-当前默认配置 (`base=32, 5层, stage_blocks=2, bot_blocks=2, batch=40, use_mamba=true`)：
-- **参数量**: ~120M (关闭 Mamba 后 ~90M)
-- **BF16 训练显存**: ~4–5 GB (关闭 Mamba 后 ~3–4 GB)
+当前默认配置 (`base=32, 5层, stage_blocks=2, bot_blocks=2, batch=40, use_cnn_rnn=true, use_transformer_output=true`)：
+- **参数量**: ~117M
+- **BF16 训练显存**: batch=40 峰值 ~2.2 GB；batch=200 峰值 ~4.7 GB
 
 #### 降低显存 / 提升稳定性
 
 ```python
 # 减小 batch (显存下降最明显)
-batch_size = 20   # ~3-4GB
+batch_size = 20   # ~1.5GB
+
+# 关闭 Transformer Output Block (显存降低最明显，速度提升)
+use_transformer_output = false
+
+# 降低 GRU 容量
+rnn_hidden_ratio = 0.25
 
 # 减少 DataLoader worker (减少 CPU 负载和内存占用)
 num_workers = 2
@@ -388,10 +404,11 @@ base_channels = 24
 blocks_per_stage = 2
 bottleneck_blocks = 2
 
-# 更轻量 (~2.0GB / 70M 参数)
+# 更轻量 (~1.5GB / 70M 参数)
 base_channels = 24
 blocks_per_stage = 2
 bottleneck_blocks = 2
+use_transformer_output = false
 
 # 如需减少 CPU 阻塞，可降低 num_workers 或关闭其他日志
 # num_workers = 0
@@ -411,7 +428,7 @@ bottleneck_blocks = 2
 
 ![Architecture Diagram](./architecture_diagram.png)
 
-**深度 ResNet-U-Net (RoPE 输入版)**
+**CNN-RNN-Transformer U-Net (RoPE 输入版)**
 
 ```
 Input: Fruit RoPE Embedding (B, 32, H, W)
@@ -424,9 +441,11 @@ Input: Fruit RoPE Embedding (B, 32, H, W)
 [Encoder Stage 4] 2×ResBlock + Pool ────────→ 512ch, 3×3
 [Encoder Stage 5] 2×ResBlock + Pool ────────→ 1024ch, 1×1
   ↓
-[Bottleneck] ResBlock + Mamba2DLayer ───────→ 1024ch, 1×1
+[Bottleneck] CNNRNNBottleneck + ResBlock ───→ 1024ch, 1×1
   ↓
 [Decoder Stage 5~1] Up + 2×ResBlock ────────→ 32ch, 50×50
+  ↓
+[Transformer Block] MSA + FFN ──────────────→ 32ch, 50×50
   ↓
 [Output] 1×1 Conv ──────────────────────────→ 1ch, logits
 ```
@@ -434,6 +453,8 @@ Input: Fruit RoPE Embedding (B, 32, H, W)
 **架构亮点**：
 - **Fruit RoPE 编码**: 使用 1D Rotary Position Embedding 将 fruit type ID 编码为 32 维向量，替代传统 one-hot，天然支持 5~12 种动态 fruit 种类
 - **ResNet 残差连接**: 每个 BasicBlock 含 2×(3×3) + Shortcut，缓解梯度消失
+- **CNN-RNN Bottleneck**: CNN 局部精炼 + 双向 Row/Col GRU，分别捕获水平和垂直方向模式，参数量仅 ~11.5M
+- **Transformer Output**: Decoder 末端加入 Pre-LN MSA + FFN，直接建模全局空间依赖
 - **膨胀卷积**: Encoder 深层使用 dilation=[1,2,4,8] 扩大感受野
 - **Logits 输出**: 模型输出 logits，损失函数内部分别做 sigmoid / bce_with_logits，兼容 BF16 autocast
 - **后处理规则层**: BFS 连通分量 + 直线连续性验证，确保只识别合法三消 Pattern
@@ -495,8 +516,9 @@ for i in range(0, 32, 2):
 | 测试脚本 | 说明 | 状态 |
 |----------|------|------|
 | `test_pattern_core.py` | PatternDetector 逻辑验证 (H/V/L/T/Cross) | ✅ 8/8 |
-| `test_memory.py` | batch=80 显存实测 | ✅ ~5-6GB |
+| `test_memory.py` | batch=200 显存实测 | ✅ ~4.7GB |
 | `test_training.py` | 端到端训练+推理+评估 | ✅ 通过 |
+| `test_model_new.py` | CNN-RNN-Transformer 架构验证 | ✅ 7/7 |
 
 ---
 

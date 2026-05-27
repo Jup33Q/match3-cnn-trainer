@@ -23,16 +23,22 @@ class Match3Config:
     base_channels: int = 32                    # 基础通道数
     num_encoder_blocks: int = 5                # Encoder 块数量 (5层深度)
     blocks_per_stage: int = 2                  # 每个Encoder/Decoder stage的ResBlock数
-    bottleneck_blocks: int = 2                 # Bottleneck中的ResBlock数
+    bottleneck_blocks: int = 2                 # Bottleneck中的块数
     use_dilation: bool = True                  # 是否使用膨胀卷积
     dilation_rates: List[int] = field(default_factory=lambda: [1, 2, 4, 8])  # 膨胀率序列
     dropout: float = 0.0                       # Dropout率
 
-    # --- Mamba 层参数 ---
-    use_mamba: bool = True                     # 是否在Bottleneck中启用Mamba层 (默认启用)
-    mamba_d_state: int = 16                    # Mamba状态空间维度
-    mamba_d_conv: int = 4                      # Mamba因果卷积核大小
-    mamba_expand: int = 2                      # Mamba内部扩展因子
+    # --- CNN-RNN Bottleneck 参数 ---
+    use_cnn_rnn: bool = True                   # 是否在Bottleneck中启用CNN-RNN层
+    rnn_hidden_ratio: float = 0.5              # GRU hidden / channels 比例
+    num_gru_layers: int = 1                    # Bi-GRU 层数
+    rnn_dropout: float = 0.0                   # GRU dropout
+
+    # --- Transformer 输出参数 ---
+    use_transformer_output: bool = True        # 是否在Decoder末端启用Transformer
+    transformer_num_heads: int = 8             # MSA 头数
+    transformer_ffn_ratio: int = 4             # FFN 扩展比
+    transformer_dropout: float = 0.0           # Transformer dropout
 
     # --- 训练参数 ---
     batch_size: int = 40                       # 每batch样本数

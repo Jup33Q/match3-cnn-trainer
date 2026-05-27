@@ -1,18 +1,18 @@
-"""model.py - 深度 ResNet-U-Net (5层, 每stage 3×ResBlock, 4层Bottleneck)
+"""model.py - CNN-RNN Bottleneck + Transformer Output U-Net (5层, 每stage 3×ResBlock)
 
-架构升级:
+架构:
 - 5层 Encoder/Decoder (50x50 -> 25x25 -> 12x12 -> 6x6 -> 3x3 -> 1x1)
-- 每个 Encoder/Decoder stage 包含 **3个 BasicBlock** (ResNet风格)
-- Bottleneck 包含 **4个 BasicBlock**
-- 总参数量 ~174M, BF16训练显存 ~3.27GB
-- 激活函数使用 SiLU (Swish), 避免 inplace ReLU 导致的 segfault
+- 每个 Encoder/Decoder stage 包含 3个 BasicBlock (ResNet风格)
+- Bottleneck: CNN-RNN 混合 (1× BasicBlock + 双向 Row/Col GRU)
+- Decoder 末端: Transformer Spatial Block (Self-Attention + FFN)
+- 输出: 1×1 Conv logits
+- 激活函数使用 SiLU, 避免 inplace ReLU 导致的 segfault
 """
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from config import Match3Config
-from .mamba_layer import Mamba2DLayer
 
 
 class BasicBlock(nn.Module):
@@ -86,20 +86,141 @@ class DecoderBlock(nn.Module):
         return x
 
 
+class CNNRNNBottleneck(nn.Module):
+    """CNN-RNN 混合 Bottleneck：CNN局部精炼 + 双向Row/Col GRU序列建模
+
+    输入:  (B, C, H, W)
+    输出:  (B, C, H, W)
+    """
+
+    def __init__(self, channels: int, rnn_hidden_ratio: float = 0.5,
+                 num_gru_layers: int = 1, dropout: float = 0.0):
+        super().__init__()
+        self.channels = channels
+
+        # CNN 分支: 局部空间精炼
+        self.cnn_branch = BasicBlock(channels, channels, dropout=dropout)
+
+        # RNN 分支: 双向 GRU 分别沿行、列方向扫描
+        hidden = max(1, int(channels * rnn_hidden_ratio))
+        self.hidden = hidden
+
+        # Row-GRU: 沿宽度方向扫描 (每行独立)
+        self.row_gru = nn.GRU(
+            channels, hidden, num_gru_layers,
+            batch_first=True, bidirectional=True, dropout=dropout if num_gru_layers > 1 else 0.0
+        )
+        # Col-GRU: 沿高度方向扫描 (每列独立)
+        self.col_gru = nn.GRU(
+            channels, hidden, num_gru_layers,
+            batch_first=True, bidirectional=True, dropout=dropout if num_gru_layers > 1 else 0.0
+        )
+
+        # 投影: 2*hidden -> channels
+        self.row_proj = nn.Conv2d(hidden * 2, channels, 1, bias=False)
+        self.col_proj = nn.Conv2d(hidden * 2, channels, 1, bias=False)
+
+        # 可学习残差缩放
+        self.gamma = nn.Parameter(torch.zeros(1))
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        residual = x
+
+        # --- CNN 分支 ---
+        cnn_out = self.cnn_branch(x)
+
+        # --- Row-GRU 分支 ---
+        # (B, C, H, W) -> (B*H, W, C)
+        x_row = x.permute(0, 2, 3, 1).reshape(B * H, W, C)
+        row_rnn, _ = self.row_gru(x_row)  # (B*H, W, 2*hidden)
+        # -> (B, H, W, 2*hidden) -> (B, 2*hidden, H, W)
+        row_rnn = row_rnn.reshape(B, H, W, self.hidden * 2).permute(0, 3, 1, 2)
+        row_out = self.row_proj(row_rnn)  # (B, C, H, W)
+
+        # --- Col-GRU 分支 ---
+        # (B, C, H, W) -> (B*W, H, C)
+        x_col = x.permute(0, 3, 2, 1).reshape(B * W, H, C)
+        col_rnn, _ = self.col_gru(x_col)  # (B*W, H, 2*hidden)
+        # -> (B, W, H, 2*hidden) -> (B, 2*hidden, H, W) 注意要转置回 H,W
+        col_rnn = col_rnn.reshape(B, W, H, self.hidden * 2).permute(0, 3, 2, 1)
+        col_out = self.col_proj(col_rnn)  # (B, C, H, W)
+
+        # 融合: CNN + (Row + Col) / 2
+        fused = cnn_out + (row_out + col_out) * 0.5
+        return residual + self.gamma * fused
+
+
+class TransformerSpatialBlock(nn.Module):
+    """2D Transformer Block：将空间特征转为序列做 Self-Attention，再恢复2D
+
+    输入:  (B, C, H, W)
+    输出:  (B, C, H, W)
+
+    使用 Pre-LN 结构: LayerNorm -> MSA/FFN -> 残差
+    """
+
+    def __init__(self, channels: int, num_heads: int = 8, ffn_ratio: int = 4,
+                 dropout: float = 0.0):
+        super().__init__()
+        self.channels = channels
+        self.num_heads = num_heads
+
+        # 确保 channels 可被 num_heads 整除
+        if channels % num_heads != 0:
+            raise ValueError(f"channels ({channels}) must be divisible by num_heads ({num_heads})")
+
+        # Pre-LN Multi-Head Self-Attention
+        self.norm1 = nn.LayerNorm(channels)
+        self.attn = nn.MultiheadAttention(
+            embed_dim=channels,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True
+        )
+        self.dropout1 = nn.Dropout(dropout)
+
+        # Pre-LN FFN
+        self.norm2 = nn.LayerNorm(channels)
+        ffn_hidden = channels * ffn_ratio
+        self.ffn = nn.Sequential(
+            nn.Linear(channels, ffn_hidden),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(ffn_hidden, channels),
+            nn.Dropout(dropout),
+        )
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        residual = x
+
+        # 2D -> 序列: (B, C, H, W) -> (B, H*W, C)
+        x_seq = x.permute(0, 2, 3, 1).reshape(B, H * W, C)
+
+        # Pre-LN MSA
+        x_norm = self.norm1(x_seq)
+        attn_out, _ = self.attn(x_norm, x_norm, x_norm, need_weights=False)
+        x_seq = x_seq + self.dropout1(attn_out)
+
+        # Pre-LN FFN
+        x_seq = x_seq + self.ffn(self.norm2(x_seq))
+
+        # 序列 -> 2D: (B, H*W, C) -> (B, C, H, W)
+        out = x_seq.reshape(B, H, W, C).permute(0, 3, 1, 2)
+        return residual + out
+
+
 class Match3UNet(nn.Module):
-    """深度三消 Pattern 识别 ResNet-U-Net + 可选 Mamba 层
+    """CNN-RNN-Transformer U-Net 三消 Pattern 识别模型
 
     架构:
     - 5层 Encoder (每stage 3× BasicBlock)
-    - 4层 Bottleneck (2× BasicBlock + 2× Mamba2DLayer, 可选)
+    - CNN-RNN Bottleneck (1× BasicBlock + Row/Col Bi-GRU)
     - 5层 Decoder (每stage 3× BasicBlock)
+    - Transformer Spatial Block (Self-Attention + FFN)
     - 首层 7x7 大卷积核
     - 输出 logits (无sigmoid, 由loss处理)
-
-    规模 (base=32, blocks=5, stage_blocks=3, bot_blocks=4):
-    - 基础参数量: ~174M
-    - 启用Mamba后: ~241M
-    - BF16训练显存 (batch=200): ~7-10GB
     """
 
     def __init__(self, config: Match3Config):
@@ -129,15 +250,21 @@ class Match3UNet(nn.Module):
             self.encoders.append(EncoderBlock(ch, next_ch, n_stage, config.use_dilation, dilation, dropout))
             ch = next_ch
 
-        # Bottleneck (BasicBlock + Mamba2DLayer 混合)
-        if config.use_mamba:
+        # Bottleneck: CNN-RNN 混合
+        use_cnn_rnn = getattr(config, 'use_cnn_rnn', True)
+        if use_cnn_rnn:
             self.bottleneck = nn.ModuleList()
+            rnn_hidden_ratio = getattr(config, 'rnn_hidden_ratio', 0.5)
+            num_gru_layers = getattr(config, 'num_gru_layers', 1)
+            rnn_dropout = getattr(config, 'rnn_dropout', 0.0)
             for i in range(n_bot):
-                if i % 2 == 1:  # 奇数位置放 Mamba
-                    self.bottleneck.append(Mamba2DLayer(
-                        ch, config.mamba_d_state, config.mamba_d_conv, config.mamba_expand
+                if i == 0:
+                    # 第一层: CNN-RNN 混合
+                    self.bottleneck.append(CNNRNNBottleneck(
+                        ch, rnn_hidden_ratio, num_gru_layers, rnn_dropout
                     ))
                 else:
+                    # 其余层: 纯 ResBlock
                     self.bottleneck.append(BasicBlock(ch, ch, dropout=dropout))
         else:
             self.bottleneck = nn.Sequential(*[
@@ -152,6 +279,18 @@ class Match3UNet(nn.Module):
             self.decoders.append(DecoderBlock(ch, skip_ch, out_ch, n_stage, dropout))
             ch = out_ch
 
+        # Transformer Output Block (可选)
+        use_transformer = getattr(config, 'use_transformer_output', True)
+        if use_transformer:
+            transformer_heads = getattr(config, 'transformer_num_heads', 8)
+            transformer_ffn_ratio = getattr(config, 'transformer_ffn_ratio', 4)
+            transformer_dropout = getattr(config, 'transformer_dropout', 0.0)
+            self.transformer_out = TransformerSpatialBlock(
+                ch, transformer_heads, transformer_ffn_ratio, transformer_dropout
+            )
+        else:
+            self.transformer_out = nn.Identity()
+
         # Output head
         self.final_conv = nn.Conv2d(ch, 1, 1)
 
@@ -161,11 +300,15 @@ class Match3UNet(nn.Module):
         for encoder in self.encoders:
             x, skip = encoder(x)
             skips.append(skip)
+
         if isinstance(self.bottleneck, nn.ModuleList):
             for layer in self.bottleneck:
                 x = layer(x)
         else:
             x = self.bottleneck(x)
+
         for decoder, skip in zip(self.decoders, reversed(skips)):
             x = decoder(x, skip)
+
+        x = self.transformer_out(x)
         return self.final_conv(x)  # logits
