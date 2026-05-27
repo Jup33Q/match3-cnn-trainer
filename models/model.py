@@ -6,7 +6,7 @@
 - Bottleneck: CNN-RNN 混合 (1× BasicBlock + 双向 Row/Col GRU)
 - Decoder 末端: Transformer Spatial Block (Self-Attention + FFN)
 - 输出: 1×1 Conv logits
-- 激活函数使用 SiLU, 避免 inplace ReLU 导致的 segfault
+- 激活函数使用 Swish (SiLU), 避免 inplace ReLU 导致的 segfault
 """
 import torch
 import torch.nn as nn
@@ -16,7 +16,7 @@ from config import Match3Config
 
 
 class BasicBlock(nn.Module):
-    """ResNet BasicBlock: 2x(3x3) + 残差连接 + 可选 Dropout (SiLU激活)"""
+    """ResNet BasicBlock: 2x(3x3) + 残差连接 + 可选 Dropout (Swish激活)"""
 
     def __init__(self, in_ch: int, out_ch: int, dilation: int = 1, dropout: float = 0.0):
         super().__init__()
@@ -27,7 +27,7 @@ class BasicBlock(nn.Module):
         self.conv2 = nn.Conv2d(out_ch, out_ch, 3, padding=padding,
                                dilation=dilation, bias=False)
         self.bn2 = nn.BatchNorm2d(out_ch)
-        self.act = nn.SiLU()
+        self.act = nn.SiLU()  # Swish activation
         self.dropout = nn.Dropout2d(dropout) if dropout > 0 else nn.Identity()
         self.shortcut = nn.Sequential(
             nn.Conv2d(in_ch, out_ch, 1, bias=False),
@@ -236,7 +236,7 @@ class Match3UNet(nn.Module):
                       config.initial_kernel_size,
                       padding=config.initial_kernel_size // 2, bias=False),
             nn.BatchNorm2d(config.base_channels),
-            nn.SiLU()
+            nn.SiLU()  # Swish activation
         )
 
         dropout = getattr(config, 'dropout', 0.0)
@@ -250,26 +250,23 @@ class Match3UNet(nn.Module):
             self.encoders.append(EncoderBlock(ch, next_ch, n_stage, config.use_dilation, dilation, dropout))
             ch = next_ch
 
-        # Bottleneck: CNN-RNN 混合
+        # Bottleneck: ResNet + CNN-RNN 混合
+        # 结构: [BasicBlock, CNNRNNBottleneck, CNNRNNBottleneck, BasicBlock]
+        # 首尾 ResBlock 精炼特征，中间两层RNN连在一起做序列建模
         use_cnn_rnn = getattr(config, 'use_cnn_rnn', True)
-        if use_cnn_rnn:
-            self.bottleneck = nn.ModuleList()
-            rnn_hidden_ratio = getattr(config, 'rnn_hidden_ratio', 0.5)
-            num_gru_layers = getattr(config, 'num_gru_layers', 1)
-            rnn_dropout = getattr(config, 'rnn_dropout', 0.0)
-            for i in range(n_bot):
-                if i == 0:
-                    # 第一层: CNN-RNN 混合
-                    self.bottleneck.append(CNNRNNBottleneck(
-                        ch, rnn_hidden_ratio, num_gru_layers, rnn_dropout
-                    ))
-                else:
-                    # 其余层: 纯 ResBlock
-                    self.bottleneck.append(BasicBlock(ch, ch, dropout=dropout))
-        else:
-            self.bottleneck = nn.Sequential(*[
-                BasicBlock(ch, ch, dropout=dropout) for _ in range(n_bot)
-            ])
+        self.bottleneck = nn.ModuleList()
+        rnn_hidden_ratio = getattr(config, 'rnn_hidden_ratio', 0.5)
+        num_gru_layers = getattr(config, 'num_gru_layers', 1)
+        rnn_dropout = getattr(config, 'rnn_dropout', 0.0)
+        for i in range(n_bot):
+            if use_cnn_rnn and i in (1, 2):
+                # 中间两层: CNN-RNN (两层RNN连在一起)
+                self.bottleneck.append(CNNRNNBottleneck(
+                    ch, rnn_hidden_ratio, num_gru_layers, rnn_dropout
+                ))
+            else:
+                # 首尾层: 纯 ResBlock (加上ResNet)
+                self.bottleneck.append(BasicBlock(ch, ch, dropout=dropout))
 
         # Decoder (5 stages)
         self.decoders = nn.ModuleList()

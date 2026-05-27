@@ -61,10 +61,10 @@ if config.use_cnn_rnn:
             self.bottleneck.append(BasicBlock(ch, ch))
 ```
 
-| 对比项 | Mamba2DLayer | CNNRNNBottleneck |
-|--------|-------------|------------------|
+| 对比项 | Mamba2DLayer | CNNRNNBottleneck (两层) |
+|--------|-------------|------------------------|
 | 核心机制 | 四向选择性状态空间扫描 | 双向GRU(行/列) + CNN残差 |
-| 参数量 | ~70M (4×独立MambaBlock) | ~8M (2×Bi-GRU + 投影) |
+| 参数量 | ~70M (4×独立MambaBlock) | ~23M (2×Bi-GRU + 投影) |
 | 反向传播 | 纯Python循环，慢，易OOM | PyTorch原生GRU，CUDA优化 |
 | 显存占用 | 大(保存中间状态) | 小(GRU内部优化) |
 
@@ -119,14 +119,14 @@ transformer_dropout: float = 0.0      # dropout
 
 ## 4. 性能实测数据
 
-环境: CUDA, BF16, batch=40, board=50×50, RoPE输入
+环境: CUDA, BF16, batch=40, board=50×50, RoPE输入, blocks_per_stage=3
 
 | 指标 | 数值 |
 |------|------|
-| 总参数量 | ~116.8M |
-| 前向+反向峰值显存 | **2.22 GB** |
-| 当前占用显存 | 1.78 GB |
-| 5GB限制 | ✅ 通过 (余量 ~2.8GB) |
+| 总参数量 | ~159.8M |
+| 前向+反向峰值显存 | **4.23 GB** |
+| 当前占用显存 | 3.2 GB |
+| 5GB限制 | ✅ 通过 (余量 ~0.8GB) |
 
 ---
 

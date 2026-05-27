@@ -73,15 +73,15 @@ def draw_skip(ax, x1, y1, x2, y2, color='#fdcb6e'):
 
 # ============ STEM ============
 draw_block(ax, 10, 22.5, 3.5, 0.9, colors['stem'], 'Stem',
-           'Conv7×7 → BN → ReLU\n[32, H, W] → [32, H, W]')
+           'Conv7×7 → BN → Swish\n[32, H, W] → [32, H, W]')
 
 # ============ ENCODER ============
 enc_stages = [
-    ('Encoder 1', '[32,50,50]→[64,25,25]', '2×ResBlock + MaxPool', 21.0),
-    ('Encoder 2', '[64,25,25]→[128,12,12]', '2×ResBlock + MaxPool', 19.5),
-    ('Encoder 3', '[128,12,12]→[256,6,6]', '2×ResBlock + MaxPool', 18.0),
-    ('Encoder 4', '[256,6,6]→[512,3,3]', '2×ResBlock + MaxPool', 16.5),
-    ('Encoder 5', '[512,3,3]→[1024,1,1]', '2×ResBlock + MaxPool', 15.0),
+    ('Encoder 1', '[32,50,50]→[64,25,25]', '3×ResBlock + MaxPool', 21.0),
+    ('Encoder 2', '[64,25,25]→[128,12,12]', '3×ResBlock + MaxPool', 19.5),
+    ('Encoder 3', '[128,12,12]→[256,6,6]', '3×ResBlock + MaxPool', 18.0),
+    ('Encoder 4', '[256,6,6]→[512,3,3]', '3×ResBlock + MaxPool', 16.5),
+    ('Encoder 5', '[512,3,3]→[1024,1,1]', '3×ResBlock + MaxPool', 15.0),
 ]
 
 for i, (name, dims, desc, y) in enumerate(enc_stages):
@@ -89,25 +89,25 @@ for i, (name, dims, desc, y) in enumerate(enc_stages):
     draw_arrow(ax, 10, y + 0.9 + 0.15, 10, y + 0.45)
 
 # ============ BOTTLENECK ============
-# With use_cnn_rnn=true, bottleneck_blocks=2: CNNRNNBottleneck + BasicBlock
-draw_block(ax, 10, 13.2, 4.0, 1.0, colors['bottleneck'], 'Bottleneck',
-           'CNNRNNBottleneck + BasicBlock\n[1024, 1, 1] → [1024, 1, 1]')
+# With use_cnn_rnn=true, bottleneck_blocks=4: ResBlock + CNN-RNN + CNN-RNN + ResBlock
+draw_block(ax, 10, 13.2, 4.2, 1.0, colors['bottleneck'], 'Bottleneck',
+           'ResBlock + 2×CNN-RNN + ResBlock\n[1024, 1, 1] → [1024, 1, 1]')
 # CNN-RNN indicator
-rnn_box = FancyBboxPatch((10 + 1.2, 13.2 - 0.25), 1.6, 0.5,
+rnn_box = FancyBboxPatch((10 + 0.8, 13.2 - 0.25), 1.6, 0.5,
                           boxstyle="round,pad=0.02", facecolor=colors['mamba'],
                           edgecolor='white', linewidth=1.5, alpha=0.9)
 ax.add_patch(rnn_box)
-ax.text(10 + 2.0, 13.2, 'CNN-RNN', fontsize=7, ha='center', va='center',
+ax.text(10 + 1.6, 13.2, '2×CNN-RNN', fontsize=7, ha='center', va='center',
         color='white', fontweight='bold')
 draw_arrow(ax, 10, 14.55, 10, 13.7)
 
 # ============ DECODER ============
 dec_stages = [
-    ('Decoder 5', '[1024,1,1]→[512,3,3]', 'UpConv + Concat + 2×ResBlock', 11.7),
-    ('Decoder 4', '[512,3,3]→[256,6,6]', 'UpConv + Concat + 2×ResBlock', 10.2),
-    ('Decoder 3', '[256,6,6]→[128,12,12]', 'UpConv + Concat + 2×ResBlock', 8.7),
-    ('Decoder 2', '[128,12,12]→[64,25,25]', 'UpConv + Concat + 2×ResBlock', 7.2),
-    ('Decoder 1', '[64,25,25]→[32,50,50]', 'UpConv + Concat + 2×ResBlock', 5.7),
+    ('Decoder 5', '[1024,1,1]→[512,3,3]', 'UpConv + Concat + 3×ResBlock', 11.7),
+    ('Decoder 4', '[512,3,3]→[256,6,6]', 'UpConv + Concat + 3×ResBlock', 10.2),
+    ('Decoder 3', '[256,6,6]→[128,12,12]', 'UpConv + Concat + 3×ResBlock', 8.7),
+    ('Decoder 2', '[128,12,12]→[64,25,25]', 'UpConv + Concat + 3×ResBlock', 7.2),
+    ('Decoder 1', '[64,25,25]→[32,50,50]', 'UpConv + Concat + 3×ResBlock', 5.7),
 ]
 
 for i, (name, dims, desc, y) in enumerate(dec_stages):
@@ -145,10 +145,10 @@ ax.text(15.5, 13.35, 'Skip Connections\n(Concatenation)', fontsize=10, ha='cente
 
 # ============ LEGEND ============
 legend_items = [
-    (colors['stem'], 'Stem: 7×7 Conv + BN + ReLU'),
-    (colors['encoder'], 'Encoder: 2×ResBlock + MaxPool2d'),
-    (colors['bottleneck'], 'Bottleneck: CNN-RNN + ResBlock'),
-    (colors['decoder'], 'Decoder: UpConv + Concat + 2×ResBlock'),
+    (colors['stem'], 'Stem: 7×7 Conv + BN + Swish'),
+    (colors['encoder'], 'Encoder: 3×ResBlock + MaxPool2d'),
+    (colors['bottleneck'], 'Bottleneck: ResBlock + 2×CNN-RNN + ResBlock'),
+    (colors['decoder'], 'Decoder: UpConv + Concat + 3×ResBlock'),
     (colors['stage'], 'Transformer: MSA + FFN'),
     (colors['output'], 'Output: 1×1 Conv (logits)'),
 ]
@@ -173,7 +173,7 @@ rb_x = 4.5
 rb_y = 1.15
 ax.add_patch(FancyBboxPatch((rb_x - 1.8, rb_y - 0.35), 3.6, 0.7,
                              boxstyle="round,pad=0.02", facecolor='#ecf0f1', edgecolor='#b2bec3'))
-ax.text(rb_x, rb_y, 'Conv3×3 → BN → ReLU → Conv3×3 → BN → (+Shortcut) → ReLU',
+ax.text(rb_x, rb_y, 'Conv3×3 → BN → Swish → Conv3×3 → BN → (+Shortcut) → Swish',
         fontsize=9, ha='center', va='center', color=colors['text'])
 ax.text(rb_x, rb_y - 0.55, 'Shortcut: 1×1 Conv + BN (if in_ch ≠ out_ch) else Identity',
         fontsize=8, ha='center', va='center', color='#636e72')

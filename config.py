@@ -22,8 +22,8 @@ class Match3Config:
     initial_kernel_size: int = 7               # 首层大卷积核 (捕获局部连续性)
     base_channels: int = 32                    # 基础通道数
     num_encoder_blocks: int = 5                # Encoder 块数量 (5层深度)
-    blocks_per_stage: int = 2                  # 每个Encoder/Decoder stage的ResBlock数
-    bottleneck_blocks: int = 2                 # Bottleneck中的块数
+    blocks_per_stage: int = 3                  # 每个Encoder/Decoder stage的ResBlock数
+    bottleneck_blocks: int = 4                 # Bottleneck中的块数
     use_dilation: bool = True                  # 是否使用膨胀卷积
     dilation_rates: List[int] = field(default_factory=lambda: [1, 2, 4, 8])  # 膨胀率序列
     dropout: float = 0.0                       # Dropout率

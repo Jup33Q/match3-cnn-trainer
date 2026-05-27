@@ -13,8 +13,8 @@
     "initial_kernel_size": 7,
     "base_channels": 32,
     "num_encoder_blocks": 5,
-    "blocks_per_stage": 2,
-    "bottleneck_blocks": 2,
+    "blocks_per_stage": 3,
+    "bottleneck_blocks": 4,
     "use_dilation": true,
     "dilation_rates": [
         1,
