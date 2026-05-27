@@ -1,18 +1,19 @@
 # Match-3 U-Net 模型 (50×50)
 
-> 基于深度 ResNet-U-Net 的三消（Match-3）Pattern 识别模型。
+> 基于 CNN-RNN-Transformer U-Net 的三消（Match-3）Pattern 识别模型。
 
 ## 模型信息
 
 | 项目 | 详情 |
 |------|------|
-| 架构 | ResNet-U-Net (5层 Encoder + 4层 Bottleneck + 5层 Decoder) |
+| 架构 | CNN-RNN-Transformer U-Net (5层 Encoder + CNN-RNN Bottleneck + 5层 Decoder + Transformer Output) |
 | 输入尺寸 | 50×50 棋盘 |
 | 水果种类 | 6 种 |
-| 参数量 | ~204M (启用 Mamba) |
+| 参数量 | ~117M |
 | 精度 | BF16 混合精度训练 |
 | 输出 | 消除位置 Mask (logits) |
-| Mamba | 默认启用 (Bottleneck 中 2×Mamba2DLayer) |
+| CNN-RNN | Bottleneck 中 CNN + 双向 Row/Col GRU |
+| Transformer | Decoder 末端 Pre-LN MSA + FFN |
 
 ## 模型架构
 
@@ -42,7 +43,7 @@ model.eval()
 
 ## 训练配置
 
-- Batch size: 40
+- Batch size: 40 (Stage 1~2 使用 100)
 - Dropout: 0.0
 - 课程学习: 10×10 → 25×25 → 50×50
 - 损失函数: Dice + Focal + Boundary
