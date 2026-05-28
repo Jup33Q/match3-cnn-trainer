@@ -1,226 +1,272 @@
-"""生成 Match3UNet 架构结构图 (Soft-Routed Parallel CNN 版)"""
+"""生成 Match3UNet 架构结构图 (美化版)"""
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
+from matplotlib.patches import FancyBboxPatch, ConnectionPatch
 import numpy as np
+import os
 
-fig, ax = plt.subplots(1, 1, figsize=(20, 30))
+# ==================== 配置 ====================
+fig, ax = plt.subplots(1, 1, figsize=(18, 28))
 ax.set_xlim(0, 20)
 ax.set_ylim(0, 30)
 ax.axis('off')
 
-# 颜色定义
+# 现代配色方案
 colors = {
-    'stem': '#4ECDC4',
-    'encoder': '#FF6B6B',
-    'bottleneck': '#FFE66D',
-    'decoder': '#1A535C',
-    'output': '#95E1D3',
-    'skip': '#F7FFF7',
-    'text': '#2D3436',
-    'arrow': '#636e72',
-    'bg': '#f8f9fa',
-    'rope': '#9b59b6',
-    'stage': '#3498db',
-    'router': '#e17055',
-    'branch': '#fdcb6e',
+    'input': '#E8F4FD',      # 浅蓝 - 输入
+    'stem': '#00B4D8',       # 青蓝 - Stem
+    'encoder': '#F94144',    # 红 - Encoder
+    'bottleneck': '#F9C74F', # 金黄 - Bottleneck
+    'decoder': '#277DA1',    # 深蓝 - Decoder
+    'transformer': '#9D4EDD', # 紫 - Transformer
+    'output': '#90E0EF',     # 浅青 - Output
+    'skip': '#F8961E',       # 橙 - Skip
+    'text': '#1D3557',       # 深蓝黑 - 主文字
+    'text_light': '#F8F9FA', # 白 - 深色背景上的文字
+    'arrow': '#457B9D',      # 箭头
+    'bg': '#F1FAEE',         # 薄荷绿背景
+    'panel': '#FFFFFF',      # 白色面板
+    'border': '#A8DADC',     # 边框
 }
 
 fig.patch.set_facecolor(colors['bg'])
 ax.set_facecolor(colors['bg'])
 
-# 标题
-ax.text(10, 29.5, 'Match3UNet Architecture', fontsize=28, fontweight='bold',
-        ha='center', va='center', color=colors['text'])
-ax.text(10, 28.8, 'Soft-Routed Parallel CNN U-Net for Match-3 Pattern Recognition (RoPE Input, 5-Stage Curriculum)',
-        fontsize=14, ha='center', va='center', color='#636e72')
+# ==================== 标题区域 ====================
+ax.text(10, 29.3, 'Match3UNet Architecture', fontsize=32, fontweight='bold',
+        ha='center', va='center', color=colors['text'],
+        bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor=colors['border'], linewidth=2))
 
-# 统计信息框
-stats_box = FancyBboxPatch((0.5, 27.5), 19, 1.0, boxstyle="round,pad=0.05,rounding_size=0.2",
-                            facecolor='white', edgecolor='#dfe6e9', linewidth=1.5)
+ax.text(10, 28.5, 'CNN-RNN-Transformer U-Net for Match-3 Pattern Recognition',
+        fontsize=14, ha='center', va='center', color='#6C757D', style='italic')
+
+# 统计信息面板
+stats_box = FancyBboxPatch((0.8, 27.6), 18.4, 0.7,
+                           boxstyle="round,pad=0.05,rounding_size=0.2",
+                           facecolor=colors['panel'], edgecolor=colors['border'], linewidth=1.5)
 ax.add_patch(stats_box)
-ax.text(10, 28.0, 'Total Params: ~176M (Soft-Router + Transformer)  |  Input: [B, 32, H, W] (Fruit RoPE)  |  Output: [B, 1, H, W]',
-        fontsize=12, ha='center', va='center', color=colors['text'], fontweight='bold')
+ax.text(10, 27.95, 'Total Params: ~176M  |  Input: [B, 4, H, W] (Regular n-gon vertex 3-ch + valid_mask)  |  Output: [B, 1, H, W]',
+        fontsize=11, ha='center', va='center', color=colors['text'], fontweight='bold')
 
-# ============ Fruit RoPE 编码框 ============
-rope_box = FancyBboxPatch((0.5, 26.0), 19, 0.9, boxstyle="round,pad=0.05,rounding_size=0.15",
-                           facecolor=colors['rope'], edgecolor='white', linewidth=2, alpha=0.15)
-ax.add_patch(rope_box)
-ax.text(10, 26.45, 'Fruit RoPE Encoding: fruit_type_id → 32-dim vector  (supports 5~12 dynamic fruit types)',
-        fontsize=11, ha='center', va='center', color=colors['rope'], fontweight='bold')
-
-def draw_block(ax, x, y, w, h, color, label, sublabel='', alpha=1.0):
+# ==================== 辅助函数 ====================
+def draw_block(ax, x, y, w, h, color, label, sublabel='', sublabel2='', shadow=True):
+    """绘制带阴影的圆角模块框"""
+    # 阴影
+    if shadow:
+        shadow_box = FancyBboxPatch((x - w/2 + 0.08, y - h/2 - 0.08), w, h,
+                                    boxstyle="round,pad=0.02,rounding_size=0.15",
+                                    facecolor='black', edgecolor='none', alpha=0.08, zorder=1)
+        ax.add_patch(shadow_box)
+    # 主框
     box = FancyBboxPatch((x - w/2, y - h/2), w, h,
-                          boxstyle="round,pad=0.02,rounding_size=0.1",
-                          facecolor=color, edgecolor='white', linewidth=2, alpha=alpha)
+                          boxstyle="round,pad=0.02,rounding_size=0.15",
+                          facecolor=color, edgecolor='white', linewidth=2.5, zorder=2)
     ax.add_patch(box)
-    ax.text(x, y + 0.05, label, fontsize=10, ha='center', va='center',
-            color='white', fontweight='bold')
+    # 标签
+    ax.text(x, y + 0.06, label, fontsize=11, ha='center', va='center',
+            color=colors['text_light'], fontweight='bold', zorder=3)
     if sublabel:
-        ax.text(x, y - 0.25, sublabel, fontsize=7, ha='center', va='center',
-                color='white', alpha=0.9)
+        ax.text(x, y - 0.22, sublabel, fontsize=8, ha='center', va='center',
+                color='white', alpha=0.95, zorder=3)
+    if sublabel2:
+        ax.text(x, y - 0.42, sublabel2, fontsize=7, ha='center', va='center',
+                color='white', alpha=0.85, zorder=3)
 
-def draw_arrow(ax, x1, y1, x2, y2, color='#636e72', style='->', lw=1.5):
+def draw_arrow(ax, x1, y1, x2, y2, color=None, lw=2.0):
+    """绘制垂直箭头"""
+    color = color or colors['arrow']
     ax.annotate('', xy=(x2, y2), xytext=(x1, y1),
-                arrowprops=dict(arrowstyle=style, color=color, lw=lw,
+                arrowprops=dict(arrowstyle='->', color=color, lw=lw,
                                connectionstyle='arc3,rad=0'))
 
-def draw_skip(ax, x1, y1, x2, y2, color='#fdcb6e'):
-    # 绘制跳跃连接弧线
-    mid_x = (x1 + x2) / 2 + 2.5
+def draw_skip_arrow(ax, x1, y1, x2, y2, color=None, lw=2.2):
+    """绘制跳跃连接（右侧弧线）"""
+    color = color or colors['skip']
     ax.annotate('', xy=(x2, y2), xytext=(x1, y1),
-                arrowprops=dict(arrowstyle='->', color=color, lw=1.8,
-                               connectionstyle=f'arc3,rad=0.35'))
+                arrowprops=dict(arrowstyle='->', color=color, lw=lw,
+                               connectionstyle='arc3,rad=0.28'))
 
-# ============ STEM ============
-draw_block(ax, 10, 24.5, 3.5, 0.9, colors['stem'], 'Stem',
-           'Conv7×7 → GN → Swish\n[32, H, W] → [32, H, W]')
+# ==================== 输入编码区域 ====================
+input_box = FancyBboxPatch((0.8, 26.0), 18.4, 0.9,
+                           boxstyle="round,pad=0.05,rounding_size=0.15",
+                           facecolor=colors['input'], edgecolor='#74C0FC', linewidth=2)
+ax.add_patch(input_box)
+ax.text(10, 26.45, 'Input Encoding: Regular n-gon vertex 3-ch (cos, sin, 1) + valid_mask  →  [B, 4, H, W]',
+        fontsize=11, ha='center', va='center', color='#1971C2', fontweight='bold')
 
-# ============ ENCODER ============
-enc_stages = [
-    ('Encoder 1', '[32,50,50]→[64,25,25]', '2×ResBlock + MaxPool', 23.0),
-    ('Encoder 2', '[64,25,25]→[128,12,12]', '2×ResBlock + MaxPool', 21.5),
-    ('Encoder 3', '[128,12,12]→[256,6,6]', '2×ResBlock + MaxPool', 20.0),
-    ('Encoder 4', '[256,6,6]→[512,3,3]', '2×ResBlock + MaxPool', 18.5),
-    ('Encoder 5', '[512,3,3]→[1024,1,1]', '2×ResBlock + MaxPool', 17.0),
+# ==================== 课程学习条 ====================
+curr_box = FancyBboxPatch((0.8, 25.0), 18.4, 0.7,
+                          boxstyle="round,pad=0.03,rounding_size=0.1",
+                          facecolor='#FFF3BF', edgecolor='#FFD43B', linewidth=1.5)
+ax.add_patch(curr_box)
+ax.text(10, 25.35,
+        'Curriculum Learning:  S0(10x10) → S1(25x25) → S2(50x50) → S3(square rand) → S4(rect rand) → S5(rect rand + n=5~12 + match=5~8)',
+        fontsize=9, ha='center', va='center', color='#E67700', fontweight='bold')
+
+# ==================== STEM ====================
+draw_block(ax, 10, 23.8, 4.0, 1.0, colors['stem'], 'Stem',
+           '7x7 Conv + GroupNorm + Swish',
+           '[B, 4, H, W] → [B, 32, H, W]')
+
+# ==================== ENCODER ====================
+enc_data = [
+    ('Encoder 1', '2x ResBlock + MaxPool', '[32, 50, 50] → [64, 25, 25]', 22.3),
+    ('Encoder 2', '2x ResBlock + MaxPool', '[64, 25, 25] → [128, 12, 12]', 20.8),
+    ('Encoder 3', '2x ResBlock + MaxPool', '[128, 12, 12] → [256, 6, 6]', 19.3),
+    ('Encoder 4', '2x ResBlock + MaxPool', '[256, 6, 6] → [512, 3, 3]', 17.8),
+    ('Encoder 5', '2x ResBlock + MaxPool', '[512, 3, 3] → [1024, 1, 1]', 16.3),
 ]
 
-for i, (name, dims, desc, y) in enumerate(enc_stages):
-    draw_block(ax, 10, y, 4.2, 0.9, colors['encoder'], name, f'{desc}\n{dims}')
-    draw_arrow(ax, 10, y + 0.9 + 0.15, 10, y + 0.45)
-
-# ============ BOTTLENECK (Soft-Router) ============
-# bottleneck_pre
-pre_y = 15.8
-draw_block(ax, 10, pre_y, 3.0, 0.6, colors['bottleneck'], 'bottleneck_pre',
-           'ResBlock [1024,1,1]')
-draw_arrow(ax, 10, 17.0 - 0.45, 10, pre_y + 0.3)
-
-# Main bottleneck area
-bot_y = 14.3
-draw_block(ax, 10, bot_y, 5.5, 1.6, colors['bottleneck'], 'Soft-Router Bottleneck',
-           'Router + 3×Parallel CNN Branch + RouterSum\n[1024,1,1] → [1024,1,1]')
-
-# Router sub-box (right side)
-router_box = FancyBboxPatch((10 + 1.4, bot_y + 0.18), 1.3, 0.42,
-                             boxstyle="round,pad=0.02", facecolor=colors['router'],
-                             edgecolor='white', linewidth=1.5, alpha=0.95)
-ax.add_patch(router_box)
-ax.text(10 + 2.05, bot_y + 0.39, 'Router', fontsize=7, ha='center', va='center',
-        color='white', fontweight='bold')
-
-# Branch sub-boxes (left side inside bottleneck)
-branch_labels = ['Branch1\ndil=1', 'Branch2\ndil=2', 'Branch3\ndil=4']
-for idx, bl in enumerate(branch_labels):
-    bx = 10 - 1.6 + idx * 1.15
-    by = bot_y - 0.22
-    b_box = FancyBboxPatch((bx - 0.48, by - 0.22), 0.96, 0.44,
-                            boxstyle="round,pad=0.02", facecolor=colors['branch'],
-                            edgecolor='white', linewidth=1.2, alpha=0.9)
-    ax.add_patch(b_box)
-    ax.text(bx, by, bl, fontsize=7, ha='center', va='center',
-            color='white', fontweight='bold')
-
-draw_arrow(ax, 10, pre_y - 0.3, 10, bot_y + 0.8)
-
-# bottleneck_post
-post_y = 13.0
-draw_block(ax, 10, post_y, 3.0, 0.6, colors['bottleneck'], 'bottleneck_post',
-           'ResBlock [1024,1,1]')
-draw_arrow(ax, 10, bot_y - 0.8, 10, post_y + 0.3)
-
-# ============ DECODER ============
-dec_stages = [
-    ('Decoder 5', '[1024,1,1]→[512,3,3]', 'UpSample + Conv + Concat + 2×ResBlock', 11.7),
-    ('Decoder 4', '[512,3,3]→[256,6,6]', 'UpSample + Conv + Concat + 2×ResBlock', 10.2),
-    ('Decoder 3', '[256,6,6]→[128,12,12]', 'UpSample + Conv + Concat + 2×ResBlock', 8.7),
-    ('Decoder 2', '[128,12,12]→[64,25,25]', 'UpSample + Conv + Concat + 2×ResBlock', 7.2),
-    ('Decoder 1', '[64,25,25]→[32,50,50]', 'UpSample + Conv + Concat + 2×ResBlock', 5.7),
-]
-
-for i, (name, dims, desc, y) in enumerate(dec_stages):
-    draw_block(ax, 10, y, 4.2, 0.9, colors['decoder'], name, f'{desc}\n{dims}')
+enc_positions = []  # 记录 encoder 位置用于 skip connection
+for i, (name, desc, dims, y) in enumerate(enc_data):
+    draw_block(ax, 10, y, 4.5, 1.0, colors['encoder'], name, desc, dims)
+    enc_positions.append(y)
     if i == 0:
-        draw_arrow(ax, 10, post_y - 0.3, 10, y + 0.45)
+        draw_arrow(ax, 10, 23.8 - 0.5, 10, y + 0.5)
     else:
-        draw_arrow(ax, 10, y + 0.9 + 0.15 + 0.6, 10, y + 0.45)
+        draw_arrow(ax, 10, enc_data[i-1][3] - 0.5, 10, y + 0.5)
 
-# ============ TRANSFORMER OUTPUT BLOCK ============
-draw_block(ax, 10, 4.0, 3.5, 0.9, colors['stage'], 'Transformer Block',
-           'MSA + FFN\n[32, 50, 50] → [32, 50, 50]')
-draw_arrow(ax, 10, 4.25, 10, 4.45)
+# ==================== BOTTLENECK ====================
+# Pre
+draw_block(ax, 10, 14.8, 3.5, 0.7, colors['bottleneck'], 'Bottleneck Pre',
+           'ResBlock [1024, 1, 1]')
+draw_arrow(ax, 10, 16.3 - 0.5, 10, 14.8 + 0.35)
 
-# ============ OUTPUT HEAD ============
-draw_block(ax, 10, 2.5, 3.5, 0.9, colors['output'], 'Output Head',
-           'Conv 1×1 (logits)\n[32, 50, 50] → [1, 50, 50]')
-draw_arrow(ax, 10, 3.55, 10, 2.95)
+# Soft-Router 主区域 (带内部结构)
+bot_y = 13.3
+draw_block(ax, 10, bot_y, 6.0, 1.8, colors['bottleneck'], 'Soft-Router Bottleneck',
+           'Router → 3x Parallel CNN Branch → RouterSum',
+           '[1024, 1, 1] → [1024, 1, 1]')
 
-# ============ SKIP CONNECTIONS ============
-skip_pairs = [
-    (23.0, 5.7),   # Enc1 -> Dec1
-    (21.5, 7.2),   # Enc2 -> Dec2
-    (20.0, 8.7),   # Enc3 -> Dec3
-    (18.5, 10.2),  # Enc4 -> Dec4
-    (17.0, 11.7),  # Enc5 -> Dec5
+# Router 子框 (右侧)
+router_w, router_h = 1.4, 0.5
+router_x, router_y = 10 + 1.8, bot_y + 0.45
+rbox = FancyBboxPatch((router_x - router_w/2, router_y - router_h/2), router_w, router_h,
+                       boxstyle="round,pad=0.02", facecolor='#E17055',
+                       edgecolor='white', linewidth=2, zorder=3)
+ax.add_patch(rbox)
+ax.text(router_x, router_y, 'Router', fontsize=8, ha='center', va='center',
+        color='white', fontweight='bold', zorder=4)
+
+# 3 个 Branch 子框
+branch_labels = ['Branch 1\ndil=1', 'Branch 2\ndil=2', 'Branch 3\ndil=4']
+branch_colors = ['#74B9FF', '#A29BFE', '#FD79A8']
+for idx, (bl, bc) in enumerate(zip(branch_labels, branch_colors)):
+    bx = 10 - 1.8 + idx * 1.8
+    by = bot_y - 0.25
+    b_w, b_h = 1.4, 0.6
+    bbox = FancyBboxPatch((bx - b_w/2, by - b_h/2), b_w, b_h,
+                           boxstyle="round,pad=0.02", facecolor=bc,
+                           edgecolor='white', linewidth=1.5, zorder=3)
+    ax.add_patch(bbox)
+    ax.text(bx, by, bl, fontsize=7, ha='center', va='center',
+            color='white', fontweight='bold', zorder=4)
+
+draw_arrow(ax, 10, 14.8 - 0.35, 10, bot_y + 0.9)
+
+# Post
+draw_block(ax, 10, 11.8, 3.5, 0.7, colors['bottleneck'], 'Bottleneck Post',
+           'ResBlock [1024, 1, 1]')
+draw_arrow(ax, 10, bot_y - 0.9, 10, 11.8 + 0.35)
+
+# ==================== DECODER ====================
+dec_data = [
+    ('Decoder 5', 'UpSample + Conv + Concat + 2x ResBlock', '[1024, 1, 1] → [512, 3, 3]', 10.5),
+    ('Decoder 4', 'UpSample + Conv + Concat + 2x ResBlock', '[512, 3, 3] → [256, 6, 6]', 9.0),
+    ('Decoder 3', 'UpSample + Conv + Concat + 2x ResBlock', '[256, 6, 6] → [128, 12, 12]', 7.5),
+    ('Decoder 2', 'UpSample + Conv + Concat + 2x ResBlock', '[128, 12, 12] → [64, 25, 25]', 6.0),
+    ('Decoder 1', 'UpSample + Conv + Concat + 2x ResBlock', '[64, 25, 25] → [32, 50, 50]', 4.5),
 ]
 
+dec_positions = []
+for i, (name, desc, dims, y) in enumerate(dec_data):
+    draw_block(ax, 10, y, 4.5, 1.0, colors['decoder'], name, desc, dims)
+    dec_positions.append(y)
+    if i == 0:
+        draw_arrow(ax, 10, 11.8 - 0.35, 10, y + 0.5)
+    else:
+        draw_arrow(ax, 10, dec_data[i-1][3] - 0.5, 10, y + 0.5)
+
+# ==================== TRANSFORMER ====================
+draw_block(ax, 10, 3.0, 4.0, 1.0, colors['transformer'], 'Transformer Output Block',
+           'Pre-LN Multi-Head Self-Attention + Feed-Forward Network',
+           '[B, 32, 50, 50] → [B, 32, 50, 50]')
+draw_arrow(ax, 10, 4.5 - 0.5, 10, 3.0 + 0.5)
+
+# ==================== OUTPUT ====================
+draw_block(ax, 10, 1.5, 3.5, 0.9, colors['output'], 'Output Head',
+           '1x1 Conv (logits) → Sigmoid',
+           '[B, 32, 50, 50] → [B, 1, 50, 50]')
+draw_arrow(ax, 10, 3.0 - 0.5, 10, 1.5 + 0.45)
+
+# ==================== SKIP CONNECTIONS ====================
+skip_pairs = list(zip(enc_positions, reversed(dec_positions)))
 for enc_y, dec_y in skip_pairs:
-    draw_skip(ax, 12.1, enc_y, 12.1, dec_y)
+    draw_skip_arrow(ax, 12.25, enc_y, 12.25, dec_y)
 
-# Skip connection 标签
-ax.text(15.5, 14.35, 'Skip Connections\n(Concatenation)', fontsize=10, ha='center', va='center',
-        color='#d63031', fontweight='bold', style='italic')
+# Skip 标签
+skip_label_x = 15.8
+skip_label_y = 13.3
+ax.annotate('Skip Connections\n(Concatenation)', xy=(skip_label_x - 0.3, skip_label_y),
+            xytext=(skip_label_x + 1.5, skip_label_y + 1.5),
+            fontsize=10, ha='center', va='center', color=colors['skip'], fontweight='bold',
+            arrowprops=dict(arrowstyle='->', color=colors['skip'], lw=1.5,
+                           connectionstyle='arc3,rad=-0.2'))
 
-# ============ LEGEND ============
-legend_items = [
-    (colors['stem'], 'Stem: 7×7 Conv + GN + Swish'),
-    (colors['encoder'], 'Encoder: 2×ResBlock + MaxPool2d'),
-    (colors['bottleneck'], 'Bottleneck: Soft-Router + 3×Parallel CNN'),
-    (colors['decoder'], 'Decoder: UpSample + Concat + 2×ResBlock'),
-    (colors['stage'], 'Transformer: Pre-LN MSA + FFN'),
-    (colors['output'], 'Output: 1×1 Conv (logits)'),
-]
-
-legend_y = 1.5
-for i, (color, text) in enumerate(legend_items):
-    lx = 1.8 + i * 3.1
-    box = FancyBboxPatch((lx - 0.25, legend_y - 0.15), 0.5, 0.3,
-                          boxstyle="round,pad=0.02", facecolor=color, edgecolor='white')
-    ax.add_patch(box)
-    ax.text(lx + 0.4, legend_y, text, fontsize=8, ha='left', va='center', color=colors['text'])
-
-# ============ RESBLOCK DETAIL ============
-detail_box = FancyBboxPatch((0.5, 0.0), 19, 1.2, boxstyle="round,pad=0.05,rounding_size=0.15",
-                             facecolor='white', edgecolor='#dfe6e9', linewidth=1.5)
+# ==================== ResBlock 详情面板 ====================
+detail_y = -0.5
+detail_box = FancyBboxPatch((0.8, detail_y), 18.4, 1.8,
+                            boxstyle="round,pad=0.05,rounding_size=0.15",
+                            facecolor='white', edgecolor=colors['border'], linewidth=1.5)
 ax.add_patch(detail_box)
-ax.text(10, 0.95, 'ResBlock (BasicBlock) Detail', fontsize=12, ha='center', va='center',
+
+ax.text(10, detail_y + 1.5, 'ResBlock (BasicBlock) Detail', fontsize=13, ha='center', va='center',
         color=colors['text'], fontweight='bold')
 
-# 画 ResBlock 内部结构示意
-rb_x = 5.0
-rb_y = 0.45
-ax.add_patch(FancyBboxPatch((rb_x - 2.2, rb_y - 0.3), 4.4, 0.6,
-                             boxstyle="round,pad=0.02", facecolor='#ecf0f1', edgecolor='#b2bec3'))
-ax.text(rb_x, rb_y, 'Conv3×3 → GN → Swish → Conv3×3 → GN → SE → LayerScale → DropPath → (+Shortcut) → Swish',
+# ResBlock 内部流程图
+rb_x = 10
+rb_y = detail_y + 0.95
+inner_box = FancyBboxPatch((rb_x - 5.5, rb_y - 0.25), 11.0, 0.5,
+                            boxstyle="round,pad=0.02", facecolor='#F8F9FA',
+                            edgecolor='#DEE2E6', linewidth=1.2)
+ax.add_patch(inner_box)
+ax.text(rb_x, rb_y,
+        'Conv3x3 → GroupNorm → Swish → Conv3x3 → GroupNorm → SE → LayerScale → DropPath → (+Shortcut) → Swish',
         fontsize=9, ha='center', va='center', color=colors['text'])
-ax.text(rb_x, rb_y - 0.5, 'Shortcut: 1×1 Conv + GN (if in_ch ≠ out_ch) else Identity  |  Init: Xavier Normal',
-        fontsize=8, ha='center', va='center', color='#636e72')
+ax.text(rb_x, rb_y - 0.45,
+        'Shortcut: 1x1 Conv + GN (if in_ch ≠ out_ch) else Identity  |  Init: Xavier Normal  |  Normalization: GroupNorm',
+        fontsize=8, ha='center', va='center', color='#6C757D')
 
-# ============ 课程学习5阶段说明 ============
-stage_box = FancyBboxPatch((0.5, 25.0), 19, 0.7, boxstyle="round,pad=0.03,rounding_size=0.1",
-                            facecolor=colors['stage'], edgecolor='white', linewidth=1.5, alpha=0.12)
-ax.add_patch(stage_box)
-stage_text = (
-    'Curriculum:  S1(10×10, 6fruit, match3~5) → S2(25×25) → S3(50×50) → '
-    'S4(rand 10~50) → S5(rand 10~50, rand 5~12 fruit, match5~8)'
-)
-ax.text(10, 25.35, stage_text, fontsize=9, ha='center', va='center',
-        color=colors['stage'], fontweight='bold')
+# ==================== 图例 ====================
+legend_items = [
+    (colors['input'], 'Input: Regular n-gon vertex 3-ch + valid_mask'),
+    (colors['stem'], 'Stem: 7x7 Conv + GN + Swish'),
+    (colors['encoder'], 'Encoder: 2x ResBlock + MaxPool'),
+    (colors['bottleneck'], 'Bottleneck: Soft-Router + 3x Branch'),
+    (colors['decoder'], 'Decoder: UpSample + Concat + 2x ResBlock'),
+    (colors['transformer'], 'Transformer: Pre-LN MSA + FFN'),
+    (colors['output'], 'Output: 1x1 Conv (logits)'),
+]
+
+# 分两行绘制图例
+row1 = legend_items[:4]
+row2 = legend_items[4:]
+for row_idx, row in enumerate([row1, row2]):
+    legend_y = detail_y + 0.35 - row_idx * 0.42
+    n_items = len(row)
+    start_x = 10 - (n_items * 3.2) / 2 + 1.6
+    for i, (bg_color, text) in enumerate(row):
+        lx = start_x + i * 3.2
+        box = FancyBboxPatch((lx - 0.25, legend_y - 0.15), 0.5, 0.3,
+                              boxstyle="round,pad=0.02", facecolor=bg_color, edgecolor='white', linewidth=1.5)
+        ax.add_patch(box)
+        ax.text(lx + 0.4, legend_y, text, fontsize=8, ha='left', va='center', color=colors['text'])
 
 plt.tight_layout()
-import os
 save_dir = os.path.join(os.path.dirname(__file__), '..')
 os.makedirs(save_dir, exist_ok=True)
 plt.savefig(os.path.join(save_dir, 'architecture_diagram.png'),
             dpi=200, bbox_inches='tight', facecolor=colors['bg'])
-print("架构图已保存至: architecture_diagram.png")
+print("[PLOT] 架构图已保存至: architecture_diagram.png")
