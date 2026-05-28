@@ -2,7 +2,7 @@
 
 > 基于 **CNN-RNN-Transformer U-Net** 的三消（Match-3）Pattern 标注模型训练器。
 >
-> 支持 50×50 棋盘、BF16 混合精度训练、课程学习（5阶段递进）、RoPE Fruit 编码、显存监控、断点恢复。
+> 支持 50×50 棋盘、BF16 混合精度训练、课程学习（6阶段递进）、正n边形顶点颜色编码、显存监控、断点恢复。
 
 ---
 
@@ -71,40 +71,54 @@ match3_cnn_trainer/
 ├── requirements.txt             # Python 依赖
 ├── main.py                      # CLI 入口 (train/eval/infer)
 ├── config.py                    # 参数化配置管理
+├── AGENTS.md                    # Agent 开发指南（输入编码、课程学习、架构约定）
 ├── configs/
 │   ├── unet_50x50.json              # 50×50 默认配置 (batch=40)
 │   ├── unet_50x50_resume.json       # 恢复训练配置 (batch=40)
 │   └── unet_50x50_resume_epoch40.json  # 恢复训练 + Dropout 配置
-├── scripts/                     # 训练快捷脚本
+├── scripts/                     # 训练快捷脚本与工具
 │   ├── resume_from_epoch50.sh   # 从最佳检查点恢复 (Stage 2)
 │   ├── resume_reduce_memory.sh  # 低显存模式恢复
 │   ├── resume_with_dropout.sh   # 恢复训练并启用 Dropout
-│   └── train_from_scratch.sh    # 从头训练
+│   ├── train_from_scratch.sh    # 从头训练
+│   ├── export_tensorboard.py    # TensorBoard → JSON + Markdown 日志导出
+│   └── plot_training_curves.py  # 绘制跨 Stage 训练曲线（log scale 处理数量级差异）
 ├── models/                      # 模型模块
 │   ├── __init__.py
-│   ├── model.py                 # 深度 ResNet-U-Net 模型 (RoPE 输入)
+│   ├── model.py                 # 深度 ResNet-U-Net 模型 (正n边形顶点3通道颜色编码)
 │   ├── mamba_layer.py           # (已弃用) 原 Mamba2D 状态空间层，现由 CNN-RNN 替代
 │   └── postprocess.py           # 三消规则后处理 (支持 fruit_ids)
 ├── trainer/                     # 训练模块
 │   ├── __init__.py
-│   ├── trainer.py               # BF16 训练引擎 + 5阶段课程学习
+│   ├── trainer.py               # BF16 训练引擎 + 6阶段课程学习
 │   ├── losses.py                # Dice + Focal + Boundary 组合损失
 │   ├── inference.py             # 推理与评估接口
 │   └── memory_monitor.py        # GPU/系统内存监控
 ├── data/                        # 数据模块
 │   ├── __init__.py
-│   ├── data_generator.py        # 程序化棋盘与 Mask 生成 (含 FruitRoPE)
+│   ├── data_generator.py        # 程序化棋盘与 Mask 生成 (含正n边形顶点3通道颜色编码)
 │   └── pattern_types.py         # PatternType 枚举 + PatternDetector
 ├── utils/                       # 工具脚本
 │   ├── model_summary.py         # 模型结构与参数计算器
 │   ├── draw_architecture.py     # Matplotlib 架构图生成
 │   ├── draw_architecture_pytorch.py  # PyTorch 原生可视化 (torchinfo/TensorBoard/ONNX)
 │   └── draw_architecture_torchviz.py # torchviz 计算图可视化
-└── tests/                       # 测试脚本
-    ├── test_pattern_core.py     # Pattern 核心逻辑测试
-    ├── test_memory.py           # 显存占用实测
-    ├── test_training.py         # 端到端训练流程验证
-    └── test_model_new.py        # CNN-RNN-Transformer 架构验证测试
+├── tests/                       # 测试脚本
+│   ├── test_pattern_core.py     # Pattern 核心逻辑测试
+│   ├── test_memory.py           # 显存占用实测
+│   ├── test_training.py         # 端到端训练流程验证
+│   └── test_model_new.py        # CNN-RNN-Transformer 架构验证测试
+└── skills_and_agent/            # Agent Skill 规范（与仓库外 skills_and_agent/ 同步）
+    ├── match3-cnn-trainer-agent.agent.md      # CNN Trainer Agent 完整规范
+    ├── match3-cnn-unet-trainer.skill.md       # U-Net 训练器 Skill
+    ├── match3-data-generation.skill.md        # 数据生成 Skill
+    ├── match3-pattern-core.skill.md           # Pattern 检测核心 Skill
+    ├── match3-training-foundation.skill.md    # 训练基础方法论 Skill
+    ├── match3-shared-utils.skill.md           # 共享工具集 Skill
+    ├── match3-hybrid-transformer-trainer.skill.md  # Hybrid Transformer 训练器 Skill
+    ├── match3-hybrid-trainer-agent.agent.md   # Hybrid Trainer Agent 规范
+    ├── match3-game-agent.agent.md             # 游戏 Agent 规范
+    └── plan.md                                # 项目规划
 ```
 
 ---
@@ -171,7 +185,7 @@ python main.py --mode train --config configs/unet_50x50.json
 
 **A. 恢复训练（继续之前的训练状态）**
 使用 `--resume` 会同时加载：
-- 模型权重（兼容旧 one-hot 输入 → 新 RoPE 输入，自动零填充适配）
+- 模型权重（自动零填充适配输入通道变化）
 - 优化器状态
 - 学习率调度器状态
 - 最佳 IoU 记录
@@ -205,6 +219,24 @@ trainer.fit()
 ```
 
 > 💡 提示：`--resume` 必须与 `--checkpoint` 同时使用，否则 `--checkpoint` 在训练模式下不会被加载。
+
+#### 清除历史并重新训练
+
+当编码方案或模型架构发生变更时，旧的 checkpoint 可能不再兼容，需要清除历史并从头训练：
+
+```bash
+# 1. 清除检查点、日志和可视化
+rm -rf checkpoints/ logs/
+
+# 2. 验证测试通过后再开始训练
+python tests/test_model_new.py
+python tests/test_training.py
+
+# 3. 从零开始完整 6 阶段课程学习
+python main.py --mode train --config configs/unet_50x50.json
+```
+
+> ⚠️ **注意**: 正n边形顶点编码与旧的 RoPE/One-Hot 编码在语义上不兼容，修改编码后必须清除旧 checkpoint 重新训练。
 
 #### 快捷脚本
 
@@ -365,10 +397,11 @@ git push modelscope main
 | `use_dilation` | true | 是否启用膨胀卷积 |
 | `dilation_rates` | [1,2,4,8] | 各层膨胀率 |
 | `curriculum_enabled` | true | 是否启用课程学习 |
-| `curriculum_stages` | [10,25,50,-1,-2] | 棋盘尺寸递进阶段（JSON 默认配置为 [10,25,50]） |
+| `curriculum_stages` | [10,25,50,-1,-3,-2] | 棋盘尺寸递进阶段（JSON 默认配置为 [10,25,50]） |
 | `curriculum_epochs_per_stage` | 20 | 每阶段训练 epoch 数 |
-| `fruit_embed_dim` | 32 | Fruit RoPE 编码维度 |
-| `max_fruit_types` | 16 | RoPE 支持的最大 fruit 种类数 |
+| `fruit_embed_dim` | 32 | (已废弃) 原 RoPE 编码维度 |
+| `max_fruit_types` | 16 | (已废弃) 原 One-Hot 最大通道数 |
+| `color_encode_channels` | 3 | 正n边形顶点编码通道数（cos, sin, 1） |
 | `stage5_match_length_range` | (5,8) | Stage5 match 长度随机范围 |
 | `stage5_fruit_range` | (5,12) | Stage5 fruit 种类随机范围 |
 | `save_every_batches` | 10 | 每 N batches 记录日志 |
@@ -428,10 +461,10 @@ use_transformer_output = false
 
 ![Architecture Diagram](./architecture_diagram.png)
 
-**CNN-RNN-Transformer U-Net (RoPE 输入版)**
+**CNN-RNN-Transformer U-Net (正n边形顶点3通道颜色编码版)**
 
 ```
-Input: Fruit RoPE Embedding (B, 32, H, W)
+Input: 正n边形顶点编码 (B, 3, H, W) + valid_mask (B, 1, H, W) = (B, 4, H, W)
   ↓
 [Stem: 7×7 Conv] ───────────────────────────→ 32ch
   ↓
@@ -451,7 +484,7 @@ Input: Fruit RoPE Embedding (B, 32, H, W)
 ```
 
 **架构亮点**：
-- **Fruit RoPE 编码**: 使用 1D Rotary Position Embedding 将 fruit type ID 编码为 32 维向量，替代传统 one-hot，天然支持 5~12 种动态 fruit 种类
+- **正n边形顶点3通道颜色编码**: 每种 fruit 类型映射到正n边形顶点坐标 (cos(2π·m/n), sin(2π·m/n), 1)。stage0-2 固定 n=6，stage2.5+ 动态 n=5~12。相同颜色在3D空间中距离为0，模型通过几何关系自然判断同色连通。
 - **ResNet 残差连接**: 每个 BasicBlock 含 2×(3×3) + Shortcut，缓解梯度消失
 - **CNN-RNN Bottleneck**: CNN 局部精炼 + 双向 Row/Col GRU，分别捕获水平和垂直方向模式，参数量仅 ~11.5M
 - **Transformer Output**: Decoder 末端加入 Pre-LN MSA + FFN，直接建模全局空间依赖
@@ -459,40 +492,48 @@ Input: Fruit RoPE Embedding (B, 32, H, W)
 - **Logits 输出**: 模型输出 logits，损失函数内部分别做 sigmoid / bce_with_logits，兼容 BF16 autocast
 - **后处理规则层**: BFS 连通分量 + 直线连续性验证，确保只识别合法三消 Pattern
 
-### Fruit RoPE 编码原理
+### 正n边形顶点3通道颜色编码原理
 
 ```python
-# 1D RoPE: 将 fruit type ID (0~15) 编码为固定 32 维向量
-for i in range(0, 32, 2):
-    theta = 10000 ^ (-2*i/32)
-    emb[i]   = sin(t * theta)
-    emb[i+1] = cos(t * theta)
+# 正n边形顶点编码: 将 fruit type ID m (0~n-1) 编码为3个通道
+n = 颜色种类数  # stage0-2: n=6; stage2.5+: n=5~12
+angles = 2 * np.pi * board / n
+board_tensor = np.stack([
+    np.cos(angles),   # 顶点x坐标
+    np.sin(angles),   # 顶点y坐标
+    np.ones_like(angles)  # 常数1
+], axis=0)  # (3, H, W)
 ```
 
-- 优点：与 fruit 种类数无关，同一编码器支持 5~12 种动态变化
-- 训练时：所有 stage 统一使用 RoPE，旧 one-hot checkpoint 可零填充适配
+- **优点**: 通道数固定为3，与颜色种类数n无关。相同颜色在3D空间中的欧氏距离为0，不同颜色的距离由正n边形几何关系自然定义。
+- **stage0-2**: n=6 固定，正六边形顶点坐标。
+- **stage2.5+**: n 随机 5~12，正n边形顶点坐标。模型只需适应不同n对应的顶点分布密度变化。
+- **与RoPE/One-Hot的区别**: RoPE用32维正弦编码，One-Hot用16维稀疏通道。正n边形编码仅用3个密集通道，既避免了稀疏性，又保持了颜色间的几何关系。
 
 ---
 
-## 课程学习 (5 阶段递进)
+## 课程学习 (6 阶段递进)
 
 | 阶段 | 标识 | 棋盘尺寸 | Fruit 种类 | Match 长度 | 输入编码 | Epoch 范围 |
 |:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Stage 1 | `10` | 10×10 | 6 (固定) | 3~5 (固定) | RoPE | 1–20 |
-| Stage 2 | `25` | 25×25 | 6 (固定) | 3~5 (固定) | RoPE | 21–40 |
-| Stage 3 | `50` | 50×50 | 6 (固定) | 3~5 (固定) | RoPE | 41–60 |
-| Stage 4 | `-1` | **随机 10~50** | 6 (固定) | 3~5 (固定) | RoPE | **61–80** |
-| **Stage 5** | `-2` | **随机 10~50** | **随机 5~12** | **随机 5~8** | **RoPE** | **81–100** |
+| Stage 1 | `10` | 10×10 | 6 (固定) | 3~5 (固定) | 正6边形顶点 (3通道) | 1–20 |
+| Stage 2 | `25` | 25×25 | 6 (固定) | 3~5 (固定) | 正6边形顶点 (3通道) | 21–40 |
+| Stage 3 | `50` | 50×50 | 6 (固定) | 3~5 (固定) | 正6边形顶点 (3通道) | 41–60 |
+| **Stage 3.5** | **`-1`** | **正方形随机 10~50** | **随机 5~12** | 3~5 (固定) | **正n边形顶点 (3通道)** | **61–80** |
+| Stage 4 | **`-3`** | **长方形随机 10~50** | **随机 5~12** | 3~5 (固定) | **正n边形顶点 (3通道)** | **81–100** |
+| **Stage 5** | `-2` | **长方形随机 10~50** | **随机 5~12** | **随机 5~8** | **正n边形顶点 (3通道)** | **101–120** |
 
-**Stage 4**: 棋盘尺寸随机化泛化训练，每样本独立随机选取 10~50 的边长，嵌入到 50×50 画布中。
+**Stage 3.5 (过渡阶段)**: 从固定 50×50 过渡到随机尺寸，同时**颜色种类开始随机化（5~12）**。每样本独立随机选取 10~50 的正方形边长，颜色种类数 n 随机 5~12，编码为正n边形顶点坐标。模型在此阶段同时适应尺寸变化和颜色种类变化。
 
-**Stage 5**: 全面泛化训练：
-- 棋盘尺寸：每样本随机 10~50
-- Fruit 种类：每样本随机 5~12 种（通过 RoPE 统一编码）
+**Stage 4 (长方形泛化)**: 在过渡阶段基础上引入**宽高独立随机**。每样本的高和宽分别随机选取 10~50，生成非正方形棋盘后嵌入 50×50 画布，训练模型适应任意宽高比。
+
+**Stage 5 (全面泛化)**: 在 Stage 4 基础上增加颜色种类随机：
+- 棋盘尺寸：每样本高宽独立随机 10~50（长方形）
+- Fruit 种类：每样本随机 5~12 种（编码为正n边形顶点坐标，3通道与n无关）
 - Match 长度：每样本随机 5~8（训练长连消除识别）
-- 目的是让模型泛化到任意尺寸、任意 fruit 种类数、任意消除长度的场景
+- 目的是让模型泛化到任意尺寸、任意宽高比、任意 fruit 种类数、任意消除长度的场景
 
-> 💡 **注意**: 默认 JSON 配置 (`unet_50x50.json`) 中 `curriculum_stages` 设置为 `[10, 25, 50]`（前 3 阶段），如需完整 5 阶段训练，请修改为 `[10, 25, 50, -1, -2]` 或直接使用 `config.py` 中的默认值。
+> 💡 **注意**: 默认 JSON 配置 (`unet_50x50.json`) 中 `curriculum_stages` 设置为 `[10, 25, 50]`（前 3 阶段），如需完整 6 阶段训练，请修改为 `[10, 25, 50, -1, -3, -2]` 或直接使用 `config.py` 中的默认值。
 
 ---
 
@@ -519,6 +560,18 @@ for i in range(0, 32, 2):
 | `test_memory.py` | batch=200 显存实测 | ✅ ~4.7GB |
 | `test_training.py` | 端到端训练+推理+评估 | ✅ 通过 |
 | `test_model_new.py` | CNN-RNN-Transformer 架构验证 | ✅ 7/7 |
+
+---
+
+## Agent Skills 规范
+
+`skills_and_agent/` 目录包含本项目的 **AI Agent Skill 规范**，定义了：
+
+- **Agent 工作流**: `match3-cnn-trainer-agent.agent.md` — CNN Trainer 完整 Agent 规范（含快捷 push 工作流）
+- **核心 Skills**: Pattern 检测、数据生成、训练基础、共享工具、U-Net/Hybrid 训练器
+- **项目规划**: `plan.md`
+
+> 这些文件与仓库外 `super_mirror/skills_and_agent/` 保持同步，便于 Agent 在不同会话中复用项目知识。
 
 ---
 
