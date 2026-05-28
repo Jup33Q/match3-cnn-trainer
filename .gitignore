@@ -10,6 +10,7 @@ logs/*
 !logs/.gitkeep
 !logs/training_loss.json
 !logs/TRAINING_LOG.md
+!logs/training_curves/
 
 # Checkpoints: 完全忽略（GitHub 不传模型）
 checkpoints/

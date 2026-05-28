@@ -200,6 +200,23 @@ def build_md_report(report: Dict[str, Any]) -> str:
             lines.append(f"- **{stage.upper()}** 验证 IoU: {_fmt_float(first)} → {_fmt_float(last)} (变化: {last-first:+.4f})")
     lines.append("")
 
+    # 训练曲线图引用
+    curves_dir = "training_curves"
+    lines.append("## 📈 训练曲线图")
+    lines.append("")
+    lines.append(f"以下图表由 `scripts/plot_training_curves.py` 自动生成，保存在 `logs/{curves_dir}/`：")
+    lines.append("")
+    lines.append("| 图表 | 说明 |")
+    lines.append("|------|------|")
+    lines.append(f"| ![Global Overview]({curves_dir}/01_global_step_overview.png) | 全局 Step 级 Total Loss（log y，stage 背景色带） |")
+    for stage in sorted(report["stage_level"].keys(), key=lambda x: int(x.replace("stage", ""))):
+        lines.append(f"| ![{stage.upper()} Train Loss]({curves_dir}/02_{stage}_train_loss.png) | {stage.upper()} 训练损失分解（log y） |")
+    lines.append(f"| ![Validation Metrics]({curves_dir}/03_validation_metrics.png) | 验证指标四宫格（线性 y） |")
+    lines.append(f"| ![Step Level Detail]({curves_dir}/04_step_level_detail.png) | Step 级损失分面图（log y） |")
+    lines.append(f"| ![Learning Rate]({curves_dir}/05_learning_rate.png) | 学习率变化曲线 |")
+    lines.append(f"| ![Combined Epoch Loss]({curves_dir}/06_combined_epoch_loss.png) | 合并 epoch 级总损失 + 低损失 zoom |")
+    lines.append("")
+
     lines.append("---")
     lines.append(f"*自动生成于 {meta['exported_at']}*")
 
