@@ -61,7 +61,7 @@ class Match3Config:
 
     # --- 课程学习 ---
     curriculum_enabled: bool = True
-    curriculum_stages: List[int] = field(default_factory=lambda: [10, 25, 50, -1, -2])  # 棋盘递进 (-1=随机10~50, -2=stage5随机+RoPE)
+    curriculum_stages: List[int] = field(default_factory=lambda: [10, 25, 50, -1, -3, -2])  # 棋盘递进 (-1=正方形随机10~50过渡, -3=长方形随机10~50, -2=stage5长方形随机+颜色随机)
     curriculum_epochs_per_stage: int = 20
     early_stage_batch_size: int = 100  # 课程学习前两个阶段的 batch_size (棋盘较小可加大)
 
@@ -90,9 +90,13 @@ class Match3Config:
     max_memory_gb: float = 8.0                 # 最大允许显存 (GB)
     memory_warning_threshold: float = 0.85     # 显存告警阈值 (比例)
 
-    # --- Fruit RoPE 编码 (stage5) ---
-    fruit_embed_dim: int = 32                  # RoPE 编码维度
-    max_fruit_types: int = 16                  # 最大支持的fruit种类数
+    # --- 颜色编码参数 ---
+    fruit_embed_dim: int = 32                  # (已废弃) 原 RoPE 编码维度
+    max_fruit_types: int = 16                  # (已废弃) 原 One-Hot 最大通道数
+    # 当前统一使用正n边形顶点3通道编码: (cos(2π·m/n), sin(2π·m/n), 1)
+
+    # --- 有效区域掩码输入 ---
+    use_valid_mask: bool = True                # 是否在输入通道中拼接 valid_mask（stage3/4随机尺寸时标记实际棋盘区域）
     stage5_match_length_range: Tuple[int, int] = (5, 8)   # stage5 match长度范围
     stage5_fruit_range: Tuple[int, int] = (5, 12)         # stage5 fruit种类范围
 

@@ -29,6 +29,25 @@ class Match3Predictor:
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.model.eval()
 
+    def _encode_board(self, board: np.ndarray) -> torch.Tensor:
+        """将 numpy board 编码为模型输入（正n边形顶点3通道 + 可选 valid_mask）"""
+        h, w = board.shape
+        n_colors = self.cfg.num_fruit_types
+
+        # 正 n 边形顶点 3 通道编码 (BF16 quantize)
+        angles = 2 * np.pi * board / n_colors
+        board_np = np.stack([
+            np.cos(angles),
+            np.sin(angles),
+            np.ones_like(angles)
+        ], axis=0).astype(np.float32)  # (3, H, W)
+        board_tensor = torch.from_numpy(board_np).to(torch.bfloat16)
+
+        if getattr(self.cfg, 'use_valid_mask', True):
+            valid_mask = torch.ones(1, h, w, dtype=torch.bfloat16)
+            board_tensor = torch.cat([board_tensor, valid_mask], dim=0)  # (4, H, W)
+        return board_tensor
+
     def predict(self, board: np.ndarray) -> np.ndarray:
         """
         单张棋盘预测
@@ -39,19 +58,28 @@ class Match3Predictor:
         Returns:
             mask: (H, W) bool array, 消除位置
         """
-        # 转 one-hot
-        h, w = board.shape
-        board_tensor = torch.zeros(self.cfg.num_fruit_types, h, w, dtype=torch.float32)
-        for c in range(self.cfg.num_fruit_types):
-            board_tensor[c] = torch.from_numpy((board == c).astype(np.float32))
+        board_tensor = self._encode_board(board).unsqueeze(0).to(self.device)  # (1, C, H, W)
+        fruit_ids = torch.from_numpy(board).long().unsqueeze(0).to(self.device)  # (1, H, W)
 
-        board_tensor = board_tensor.unsqueeze(0).to(self.device)  # (1, C, H, W)
+        # 根据配置启用 BF16/FP16 autocast，与训练时保持一致
+        autocast_dtype = None
+        if self.cfg.precision == "bf16" and torch.cuda.is_available() and torch.cuda.is_bf16_supported():
+            autocast_dtype = torch.bfloat16
+        elif self.cfg.precision == "fp16" and torch.cuda.is_available():
+            autocast_dtype = torch.float16
 
         with torch.no_grad():
-            pred = self.model(board_tensor)
-            pred = torch.sigmoid(pred)
-            if self.cfg.enforce_connectivity:
-                pred = enforce_match3_rules(pred, board_tensor)
+            if autocast_dtype is not None:
+                with torch.amp.autocast(device_type=self.device.type, dtype=autocast_dtype):
+                    pred = self.model(board_tensor)
+                    pred = torch.sigmoid(pred)
+                    if self.cfg.enforce_connectivity:
+                        pred = enforce_match3_rules(pred, board_tensor, fruit_ids=fruit_ids)
+            else:
+                pred = self.model(board_tensor)
+                pred = torch.sigmoid(pred)
+                if self.cfg.enforce_connectivity:
+                    pred = enforce_match3_rules(pred, board_tensor, fruit_ids=fruit_ids)
 
         mask = (pred.squeeze().cpu().numpy() > self.cfg.mask_threshold)
         return mask
@@ -67,19 +95,29 @@ class Match3Predictor:
         """
         # 假设所有 boards 尺寸相同
         h, w = boards[0].shape
-        batch = torch.zeros(len(boards), self.cfg.num_fruit_types, h, w, dtype=torch.float32)
+        batch_list = [self._encode_board(b) for b in boards]
+        batch = torch.stack(batch_list, dim=0).to(self.device)  # (B, C, H, W)
+        fruit_ids = torch.stack([torch.from_numpy(b).long() for b in boards], dim=0).to(self.device)
 
-        for i, board in enumerate(boards):
-            for c in range(self.cfg.num_fruit_types):
-                batch[i, c] = torch.from_numpy((board == c).astype(np.float32))
-
-        batch = batch.to(self.device)
+        # 根据配置启用 BF16/FP16 autocast，与训练时保持一致
+        autocast_dtype = None
+        if self.cfg.precision == "bf16" and torch.cuda.is_available() and torch.cuda.is_bf16_supported():
+            autocast_dtype = torch.bfloat16
+        elif self.cfg.precision == "fp16" and torch.cuda.is_available():
+            autocast_dtype = torch.float16
 
         with torch.no_grad():
-            preds = self.model(batch)
-            preds = torch.sigmoid(preds)
-            if self.cfg.enforce_connectivity:
-                preds = enforce_match3_rules(preds, batch)
+            if autocast_dtype is not None:
+                with torch.amp.autocast(device_type=self.device.type, dtype=autocast_dtype):
+                    preds = self.model(batch)
+                    preds = torch.sigmoid(preds)
+                    if self.cfg.enforce_connectivity:
+                        preds = enforce_match3_rules(preds, batch, fruit_ids=fruit_ids)
+            else:
+                preds = self.model(batch)
+                preds = torch.sigmoid(preds)
+                if self.cfg.enforce_connectivity:
+                    preds = enforce_match3_rules(preds, batch, fruit_ids=fruit_ids)
 
         masks = [(p.squeeze().cpu().numpy() > self.cfg.mask_threshold) for p in preds]
         return masks
@@ -92,7 +130,7 @@ class Match3Predictor:
         total_iou = 0.0
 
         for _ in range(num_test_samples):
-            board, true_mask, _ = generator.generate_board(self.cfg.board_size, "positive")
+            board, true_mask, _ = generator.generate_board(self.cfg.board_size, difficulty="positive")
             pred_mask = self.predict(board)
 
             correct += (pred_mask == true_mask).sum()

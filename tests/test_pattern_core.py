@@ -182,7 +182,7 @@ def test_data_generator():
     gen = Match3BoardGenerator(cfg)
 
     # 测试easy
-    board, mask, pt = gen.generate_board(50, "easy")
+    board, mask, pt = gen.generate_board(50, difficulty="easy")
     assert board.shape == (50, 50)
     assert mask.shape == (50, 50)
     assert pt.shape == (50, 50)
@@ -190,12 +190,12 @@ def test_data_generator():
     print(f"  easy样本: board={board.shape}, mask正样本比例={mask.mean():.4f}")
 
     # 测试hard
-    board, mask, pt = gen.generate_board(50, "hard")
+    board, mask, pt = gen.generate_board(50, difficulty="hard")
     assert mask.sum() == 0, "hard样本不应有消除"
     print(f"  hard样本: 确认无消除Pattern")
 
     # 测试positive
-    board, mask, pt = gen.generate_board(50, "positive")
+    board, mask, pt = gen.generate_board(50, difficulty="positive")
     assert mask.sum() > 0, "positive样本应有消除"
     print(f"  positive样本: mask正样本比例={mask.mean():.4f}")
 

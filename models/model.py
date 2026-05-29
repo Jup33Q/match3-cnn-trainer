@@ -358,8 +358,10 @@ class Match3UNet(nn.Module):
         n_stage = config.get("blocks_per_stage", 2)
         n_bot = config.get("bottleneck_blocks", 2)
 
-        # Stem (支持 RoPE 编码输入)
-        input_ch = getattr(config, 'fruit_embed_dim', config.num_fruit_types)
+        # Stem (支持正n边形顶点3通道输入 + 可选 valid_mask 通道)
+        input_ch = 3  # cos, sin, 1
+        if getattr(config, 'use_valid_mask', True):
+            input_ch += 1
         num_groups = getattr(config, 'num_groups', 8)
 
         self.stem = nn.Sequential(

@@ -40,7 +40,9 @@
     "curriculum_stages": [
         10,
         25,
-        50
+        50,
+        -1,
+        -2
     ],
     "curriculum_epochs_per_stage": 20,
     "mask_threshold": 0.5,

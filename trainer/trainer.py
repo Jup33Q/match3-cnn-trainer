@@ -161,7 +161,7 @@ class Match3Trainer:
                         print(f"\n⚠️ 显存超限! 当前={mem_allocated:.2f}GB, 限制={self.cfg.max_memory_gb}GB")
                         torch.cuda.empty_cache()
 
-            pbar.set_postfix({k: f"{v:.4f}" for k, v in losses.items()})
+            pbar.set_postfix({k: f"{v:.4e}" for k, v in losses.items()})
             self.global_step += 1
 
         return {k: v / len(dataloader) for k, v in total_loss.items()}
@@ -235,9 +235,11 @@ class Match3Trainer:
                 print(f"\n跳过阶段 {stage_idx} (尺寸 {stage_size}x{stage_size})")
                 continue
             if stage_size == -2:
-                stage_label = "Stage5: 随机10~50 + RoPE + 5~12种fruit + match>=5"
+                stage_label = "Stage5: 随机高宽10~50 + One-Hot + 5~12种fruit + match>=5"
+            elif stage_size == -3:
+                stage_label = "随机高宽 10~50 (长方形)"
             elif stage_size == -1:
-                stage_label = "随机尺寸 10~50"
+                stage_label = "随机尺寸 10~50 (正方形过渡)"
             else:
                 stage_label = f"{stage_size}x{stage_size}"
             # 前两个阶段棋盘尺寸小，可加大 batch_size
@@ -304,12 +306,12 @@ class Match3Trainer:
                     for vis_idx in range(10):
                         vis_board, vis_mask, vis_fids = None, None, None
                         for _ in range(50):  # 最多尝试50次生成正例 (减少CPU阻塞)
-                            vb, vm, vf = val_ds._generate_one()
+                            vb, vm, vf, _ = val_ds._generate_one()
                             if vm.sum() > 0:
                                 vis_board, vis_mask, vis_fids = vb, vm, vf
                                 break
                         if vis_board is None:
-                            vis_board, vis_mask, vis_fids = val_ds._generate_one()
+                            vis_board, vis_mask, vis_fids, _ = val_ds._generate_one()
 
                         vis_board = vis_board.unsqueeze(0).to(self.device)
                         vis_mask = vis_mask.unsqueeze(0).to(self.device)
@@ -329,7 +331,7 @@ class Match3Trainer:
                 for k, v in val_metrics.items():
                     self.writer.add_scalar(f"stage{stage_idx}/val_{k}", v, global_epoch)
 
-                print(f"Epoch {global_epoch}: Loss={train_loss['total']:.4f}, "
+                print(f"Epoch {global_epoch}: Loss={train_loss['total']:.4e}, "
                       f"Val IoU={val_metrics['iou']:.4f}, F1={val_metrics['f1']:.4f}")
 
                 # 学习率调度
@@ -433,8 +435,10 @@ class Match3Trainer:
             for k, v in state_dict.items()
         }
 
-        # 兼容输入通道变化 (stem.conv1.weight)
-        expected_in_ch = getattr(self.cfg, 'fruit_embed_dim', self.cfg.num_fruit_types)
+        # 兼容输入通道变化 (stem.conv1.weight，含 valid_mask 通道扩展)
+        expected_in_ch = 3  # 正n边形顶点编码: cos, sin, 1
+        if getattr(self.cfg, 'use_valid_mask', True):
+            expected_in_ch += 1
         if 'stem.0.weight' in fp32_state:
             actual_in_ch = fp32_state['stem.0.weight'].shape[1]
             if actual_in_ch != expected_in_ch:
@@ -484,6 +488,7 @@ class Match3Trainer:
                         cy, cx = y * cell, x * cell
                         is_active = False
                         if mode == "input":
+                            # Input 显示完整棋盘，但 mask 区域高亮，非 mask 区域暗色
                             is_active = True
                         elif mode == "code":
                             is_active = gt_np[y, x] > 0
@@ -492,6 +497,9 @@ class Match3Trainer:
 
                         if is_active:
                             color = FRUIT_COLORS[board_np[y, x] % len(FRUIT_COLORS)]
+                            if mode == "input" and gt_np[y, x] == 0:
+                                # 非 mask 区域显示为暗色背景（保留微弱纹理）
+                                color = tuple(int(c * 0.15) for c in color)
                         else:
                             color = (0, 0, 0)
                         img[cy:cy+cell, cx:cx+cell] = color

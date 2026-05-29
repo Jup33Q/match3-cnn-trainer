@@ -59,7 +59,7 @@ def test_mini_training():
         print(f"✅ 日志文件: {log_files}")
 
         # 验证推理
-        from inference import Match3Predictor
+        from trainer.inference import Match3Predictor
         ckpt_path = os.path.join(config.checkpoint_dir, ckpt_files[0])
         predictor = Match3Predictor(ckpt_path, config)
         import numpy as np

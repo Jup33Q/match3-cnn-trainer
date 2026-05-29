@@ -5,6 +5,10 @@ from config import Match3Config
 from models.model import Match3UNet
 
 
+def _get_in_ch(cfg):
+    return 3 + (1 if cfg.use_valid_mask else 0)
+
+
 def test_all():
     print("=" * 60)
     print("Soft-Routed Parallel CNN U-Net 架构验证测试")
@@ -18,7 +22,7 @@ def test_all():
     try:
         cfg = Match3Config()
         model = Match3UNet(cfg)
-        x = torch.randn(2, 32, 50, 50)
+        x = torch.randn(2, _get_in_ch(cfg), 50, 50)
         y = model(x)
         assert y.shape == (2, 1, 50, 50)
         print(f"  ✅ 输出形状: {y.shape}")
@@ -77,7 +81,7 @@ def test_all():
         cfg = Match3Config()
         cfg.board_size = 10
         model = Match3UNet(cfg)
-        x4 = torch.randn(2, 32, 10, 10)
+        x4 = torch.randn(2, _get_in_ch(cfg), 10, 10)
         y4 = model(x4)
         assert y4.shape == (2, 1, 10, 10)
         print(f"  ✅ 输出形状: {y4.shape}")
@@ -91,7 +95,7 @@ def test_all():
     try:
         cfg = Match3Config()
         model = Match3UNet(cfg)
-        x5 = torch.randn(2, 32, 50, 50, requires_grad=True)
+        x5 = torch.randn(2, _get_in_ch(cfg), 50, 50, requires_grad=True)
         y5 = model(x5)
         loss = y5.mean()
         loss.backward()
@@ -110,7 +114,7 @@ def test_all():
             cfg.board_size = 50
             device = torch.device('cuda')
             model = Match3UNet(cfg).to(device)
-            x6 = torch.randn(8, 32, 50, 50, device=device)
+            x6 = torch.randn(8, _get_in_ch(cfg), 50, 50, device=device)
             torch.cuda.empty_cache()
             with torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16):
                 p6 = model(x6)
@@ -142,7 +146,7 @@ def test_all():
         model = Match3UNet(cfg)
         model.eval()
         with torch.no_grad():
-            x_test = torch.randn(2, 32, 50, 50)
+            x_test = torch.randn(2, _get_in_ch(cfg), 50, 50)
             # 手动运行到router
             x_enc = model.stem(x_test)
             skips = []
